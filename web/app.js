@@ -53,7 +53,7 @@ function setupTabs() {
 function setupEventListeners() {
   document.getElementById('btnScan').addEventListener('click', () => {
     logActivity('[SCAN] Re-escaneando el sistema en busca de juegos y partidas...', 'info');
-    loadGames();
+    loadAllPlatforms();
   });
 
   document.getElementById('btnOpenBackups').addEventListener('click', () => {
@@ -239,7 +239,7 @@ function setupEventListeners() {
         logActivity(`[SUCCESS] Ranura ${currentSlot.name} actualizada con nuevo blob (${data.new_size} bytes).`, 'success');
         closeModal('injectModal');
         closeModal('slotsModal');
-        loadGames();
+        loadAllPlatforms();
       } else {
         showToast(`Error: ${data.error}`, 'error');
         logActivity(`[ERROR] Falló la inyección: ${data.error}`, 'error');
@@ -296,7 +296,7 @@ function setupEventListeners() {
         showToast(`¡Backup restaurado exitosamente en ${targetGame.name}!`, 'success');
         logActivity(`[SUCCESS] Partida restaurada en ${targetWgsDir}. Pre-backup creado en ${data.safety_backup || 'N/A'}`, 'success');
         closeModal('importBackupModal');
-        loadGames();
+        loadAllPlatforms();
       } else {
         showToast(`Error restaurando: ${data.error}`, 'error');
         logActivity(`[ERROR] Falló la restauración: ${data.error}`, 'error');
