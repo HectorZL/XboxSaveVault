@@ -87,6 +87,7 @@ class XboxScanner:
                 "install_path": ig.get("install_path"),
                 "logo_path": ig.get("logo_path"),
                 "logo_base64": ig.get("logo_base64"),
+                "cover_url": GameCoverService.get_cover(clean_display_name),
                 "is_installed": True,
                 "has_saves": matched_save is not None or (wgs_user_dirs and len(wgs_user_dirs[0]["containers"]) > 0) or len(native_files) > 0,
                 "save_details": matched_save.get("details") if matched_save else {
@@ -118,6 +119,7 @@ class XboxScanner:
                     "install_path": None,
                     "logo_path": None,
                     "logo_base64": None,
+                    "cover_url": GameCoverService.get_cover(game_name),
                     "is_installed": False,
                     "has_saves": True,
                     "save_details": ws.get("details"),

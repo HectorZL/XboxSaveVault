@@ -650,121 +650,149 @@ body {
 /* Games Grid */
 .games-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-  gap: 22px;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 24px;
 }
 
 .game-card {
-  background: rgba(15, 21, 31, 0.85);
+  background: rgba(14, 20, 30, 0.9);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  padding: 22px;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 18px;
   transition: var(--transition);
   position: relative;
   overflow: hidden;
-}
-
-.game-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-  background: var(--xbox-green);
-  opacity: 0;
-  transition: var(--transition);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 .game-card:hover {
-  transform: translateY(-4px);
-  background: var(--bg-card-hover);
-  border-color: rgba(16, 230, 76, 0.3);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4), 0 0 20px rgba(16, 124, 16, 0.15);
+  transform: translateY(-5px);
+  border-color: rgba(16, 230, 76, 0.45);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65), 0 0 24px rgba(16, 230, 76, 0.2);
 }
 
-.game-card:hover::before {
-  opacity: 1;
-}
-
-.game-card-header {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-}
-
-.game-cover-wrap {
-  width: 90px;
-  height: 64px;
-  border-radius: 10px;
-  overflow: hidden;
-  background: #0f1520;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+.game-card-banner {
+  width: 100%;
+  height: 145px;
   position: relative;
-  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  overflow: hidden;
+  background: linear-gradient(135deg, #111827, #0b0f19);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.game-card:hover .game-cover-wrap {
-  transform: scale(1.05);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6), 0 0 16px var(--xbox-glow);
-  border-color: rgba(16, 230, 76, 0.4);
-}
-
-.game-cover-img {
+.game-card-banner .game-cover-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
-  transition: transform 0.3s ease;
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.game-card:hover .game-cover-img {
+.game-card:hover .game-card-banner .game-cover-img {
   transform: scale(1.08);
 }
 
-.game-logo {
-  width: 90px;
-  height: 64px;
-  border-radius: 10px;
-  background: #111827;
-  object-fit: cover;
-  border: 1px solid var(--border-color);
-  flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+.game-card-banner-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.15) 0%, rgba(14, 20, 30, 0.3) 40%, rgba(14, 20, 30, 0.98) 100%);
+  pointer-events: none;
 }
 
-.game-logo-placeholder {
-  width: 90px;
-  height: 64px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #1f2937, #111827);
+.game-banner-fallback {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.6rem;
-  border: 1px solid var(--border-color);
-  flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  font-size: 2.8rem;
+  background: linear-gradient(135deg, #1e293b, #0f172a);
 }
 
-.game-logo-placeholder.steam-badge {
-  background: linear-gradient(135deg, #0284c7, #0f172a);
-  border-color: rgba(56, 189, 248, 0.3);
+.platform-pill {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  z-index: 2;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  letter-spacing: 0.3px;
 }
 
-.game-logo-placeholder.epic-badge {
-  background: linear-gradient(135deg, #334155, #0f172a);
-  border-color: rgba(148, 163, 184, 0.3);
+.platform-pill.xbox { border-color: rgba(16, 230, 76, 0.5); color: #86efac; }
+.platform-pill.steam { border-color: rgba(56, 189, 248, 0.5); color: #7dd3fc; }
+.platform-pill.epic { border-color: rgba(168, 85, 247, 0.5); color: #d8b4fe; }
+.platform-pill.local { border-color: rgba(251, 191, 36, 0.5); color: #fde68a; }
+
+.save-status-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(16, 124, 16, 0.9);
+  color: #fff;
+  border: 1px solid rgba(16, 230, 76, 0.55);
+  backdrop-filter: blur(10px);
+  z-index: 2;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
-.game-logo-placeholder.xbox-badge {
-  background: linear-gradient(135deg, #107C10, #0a4f0a);
-  border-color: rgba(16, 230, 76, 0.3);
+.game-card-body {
+  padding: 16px 20px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+}
+
+.game-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.game-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.2px;
+}
+
+.game-publisher {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin-top: 3px;
+}
+
+.game-save-info {
+  background: rgba(20, 28, 42, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.82rem;
 }
 
 .game-meta {

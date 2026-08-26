@@ -355,22 +355,38 @@ function updateStats() {
   if (countEpic) countEpic.textContent = (allData.epic ? allData.epic.length : 0) + (allData.local_saves ? allData.local_saves.length : 0);
 }
 
-// Helper to render Cover Banner Image or Fallback Badge
-function getGameCoverHtml(game, defaultEmoji = '🎮', badgeClass = '') {
+// Helper to render Full-Width Hero Cover Banner
+function getGameCoverBannerHtml(game, defaultEmoji = '🎮', pillClass = 'local', pillText = 'PC Save') {
   const coverUrl = game.cover_url || (game.appid ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${game.appid}/header.jpg` : null);
-  if (game.logo_base64) {
-    return `<img src="${game.logo_base64}" alt="${game.name}" class="game-logo">`;
-  }
+  const logoBase64 = game.logo_base64;
+
   if (coverUrl) {
     return `
-      <div class="game-cover-wrap">
-        <img src="${coverUrl}" alt="${game.name}" class="game-cover-img" onerror="this.onerror=null; this.parentElement.outerHTML='<div class=\\'game-logo-placeholder ${badgeClass}\\'>${defaultEmoji}</div>'">
+      <div class="game-card-banner">
+        <img src="${coverUrl}" alt="${game.name}" class="game-cover-img" onerror="this.parentElement.innerHTML='<div class=\\'game-banner-fallback\\'>${defaultEmoji}</div><div class=\\'game-card-banner-overlay\\'></div><span class=\\'platform-pill ${pillClass}\\'>${pillText}</span>'">
+        <div class="game-card-banner-overlay"></div>
+        <span class="platform-pill ${pillClass}">${pillText}</span>
       </div>
     `;
   }
-  return `<div class="game-cover-wrap" data-cover-pending="${game.name}">
-            <div class="game-logo-placeholder ${badgeClass}">${defaultEmoji}</div>
-          </div>`;
+
+  if (logoBase64) {
+    return `
+      <div class="game-card-banner" style="background: #0f172a;">
+        <img src="${logoBase64}" alt="${game.name}" class="game-cover-img" style="object-fit: contain; padding: 18px;">
+        <div class="game-card-banner-overlay"></div>
+        <span class="platform-pill ${pillClass}">${pillText}</span>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="game-card-banner" data-cover-pending="${game.name}" data-pill-class="${pillClass}" data-pill-text="${pillText}" data-emoji="${defaultEmoji}">
+      <div class="game-banner-fallback">${defaultEmoji}</div>
+      <div class="game-card-banner-overlay"></div>
+      <span class="platform-pill ${pillClass}">${pillText}</span>
+    </div>
+  `;
 }
 
 // Background cover resolver for items without covers
@@ -382,7 +398,14 @@ function resolveMissingCovers() {
       const res = await fetch(`/api/game-cover?name=${encodeURIComponent(gameName)}`);
       const data = await res.json();
       if (data.success && data.cover_url) {
-        el.innerHTML = `<img src="${data.cover_url}" alt="${gameName}" class="game-cover-img" onerror="this.style.display='none'">`;
+        const img = document.createElement('img');
+        img.src = data.cover_url;
+        img.alt = gameName;
+        img.className = 'game-cover-img';
+        img.onload = () => {
+          el.querySelector('.game-banner-fallback')?.remove();
+          el.insertBefore(img, el.firstChild);
+        };
         delete el.dataset.coverPending;
       }
     } catch (e) {}
@@ -405,50 +428,46 @@ function renderSteamGames(games) {
     const saveDetails = g.save_details;
     const saveCountText = saveDetails ? `${saveDetails.files.length} archivos (${saveDetails.total_size_kb} KB)` : (g.extra_save_files && g.extra_save_files.length > 0 ? `${g.extra_save_files.length} archivos locales` : 'Sin partidas detectadas');
     const filesList = saveDetails ? saveDetails.files : (g.extra_save_files || []);
-    const coverHtml = getGameCoverHtml(g, '🔵', 'steam-badge');
+    const bannerHtml = getGameCoverBannerHtml(g, '🔵', 'steam', '🔵 Steam');
 
     card.innerHTML = `
-      <div class="game-card-header">
-        ${coverHtml}
-        <div class="game-meta">
+      ${bannerHtml}
+      <div class="game-card-body">
+        <div>
           <div class="game-title" title="${g.name}">${g.name}</div>
-          <div class="game-publisher">Steam AppID: <code>${g.appid}</code></div>
-          <div class="game-tags">
-            <span class="tag ${g.install_path ? 'tag-active' : ''}">${g.install_path ? 'Instalado' : 'Solo Partida Cloud'}</span>
-            ${g.has_saves ? `<span class="tag tag-active">💾 Partidas Steam</span>` : ''}
+          <div class="game-publisher">Steam AppID: <code>${g.appid}</code> &bull; ${g.install_path ? 'Instalado' : 'Partida Cloud'}</div>
+        </div>
+
+        <div class="game-save-info">
+          <div class="save-info-row">
+            <span class="save-info-label">Estado Partidas:</span>
+            <span class="save-info-value" style="color: ${g.has_saves ? '#00d2ff' : 'var(--text-muted)'}">${saveCountText}</span>
           </div>
+          <div class="save-info-row">
+            <span class="save-info-label">Archivos:</span>
+            <span class="save-info-value" style="font-size: 0.74rem;">${filesList.map(f => f.name).slice(0, 3).join(', ') || 'Ninguno'}</span>
+          </div>
+          ${g.remote_save_path ? `
+          <div class="save-info-row">
+            <span class="save-info-label">Ruta:</span>
+            <span class="save-info-value" title="${g.remote_save_path}">${g.remote_save_path}</span>
+          </div>` : ''}
         </div>
-      </div>
 
-      <div class="game-save-info">
-        <div class="save-info-row">
-          <span class="save-info-label">Estado Partidas:</span>
-          <span class="save-info-value" style="color: ${g.has_saves ? '#00d2ff' : 'var(--text-muted)'}">${saveCountText}</span>
+        <div class="game-actions">
+          ${g.has_saves ? `
+            <button class="btn btn-action-xbox btn-card-main" onclick="startBridgeTransferFromSteam('${g.appid}')">
+              🔄 Pasar Partida a Xbox PC / Game Pass
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="openFolder('${(g.remote_save_path || '').replace(/\\/g, '\\\\')}')">
+              📁 Abrir Carpeta
+            </button>
+          ` : `
+            <button class="btn btn-secondary btn-sm" style="grid-column: span 2;" disabled>
+              Sin partidas activas
+            </button>
+          `}
         </div>
-        <div class="save-info-row">
-          <span class="save-info-label">Archivos:</span>
-          <span class="save-info-value" style="font-size: 0.72rem;">${filesList.map(f => f.name).slice(0, 3).join(', ') || 'Ninguno'}</span>
-        </div>
-        ${g.remote_save_path ? `
-        <div class="save-info-row">
-          <span class="save-info-label">Ruta Partida:</span>
-          <span class="save-info-value" title="${g.remote_save_path}">${g.remote_save_path}</span>
-        </div>` : ''}
-      </div>
-
-      <div class="game-actions">
-        ${g.has_saves ? `
-          <button class="btn btn-action-xbox btn-card-main" onclick="startBridgeTransferFromSteam('${g.appid}')">
-            🔄 Pasar Partida a Xbox PC / Game Pass
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="openFolder('${(g.remote_save_path || '').replace(/\\/g, '\\\\')}')">
-            📁 Abrir Carpeta
-          </button>
-        ` : `
-          <button class="btn btn-secondary btn-sm" style="grid-column: span 2;" disabled>
-            Sin partidas activas
-          </button>
-        `}
       </div>
     `;
     steamGrid.appendChild(card);
@@ -474,51 +493,50 @@ function renderEpicGames(epicList, localList) {
     const fileCount = g.file_count || (g.files ? g.files.length : 0);
     const sizeText = g.total_size_kb ? `${g.total_size_kb} KB` : '';
     const filesList = g.files ? g.files.map(f => f.name).slice(0, 3).join(', ') : 'N/A';
-    const badgeEmoji = g.platform === 'Epic Games' ? '⚫' : (g.platform === 'AppData LocalLow' ? '📁' : '💾');
-    const coverHtml = getGameCoverHtml(g, badgeEmoji, 'epic-badge');
+    const isEpic = g.platform === 'Epic Games';
+    const pillClass = isEpic ? 'epic' : 'local';
+    const pillText = isEpic ? '⚫ Epic Games' : (g.platform === 'AppData LocalLow' ? '📁 LocalLow' : '💾 Saved Games');
+    const badgeEmoji = isEpic ? '⚫' : (g.platform === 'AppData LocalLow' ? '📁' : '💾');
+    const bannerHtml = getGameCoverBannerHtml(g, badgeEmoji, pillClass, pillText);
 
     card.innerHTML = `
-      <div class="game-card-header">
-        ${coverHtml}
-        <div class="game-meta">
+      ${bannerHtml}
+      <div class="game-card-body">
+        <div>
           <div class="game-title" title="${g.name}">${g.name}</div>
           <div class="game-publisher">${g.developer || g.platform}</div>
-          <div class="game-tags">
-            <span class="tag tag-active">${g.platform}</span>
-            ${fileCount > 0 ? `<span class="tag tag-active">💾 ${fileCount} Archivos</span>` : ''}
+        </div>
+
+        <div class="game-save-info">
+          <div class="save-info-row">
+            <span class="save-info-label">Partidas:</span>
+            <span class="save-info-value" style="color: #cbd5e1;">${fileCount} archivos (${sizeText})</span>
           </div>
+          <div class="save-info-row">
+            <span class="save-info-label">Archivos:</span>
+            <span class="save-info-value" style="font-size: 0.74rem;">${filesList}</span>
+          </div>
+          ${g.save_path ? `
+          <div class="save-info-row">
+            <span class="save-info-label">Ruta:</span>
+            <span class="save-info-value" title="${g.save_path}">${g.save_path}</span>
+          </div>` : ''}
         </div>
-      </div>
 
-      <div class="game-save-info">
-        <div class="save-info-row">
-          <span class="save-info-label">Partidas:</span>
-          <span class="save-info-value" style="color: #cbd5e1;">${fileCount} archivos (${sizeText})</span>
+        <div class="game-actions">
+          ${fileCount > 0 ? `
+            <button class="btn btn-action-xbox btn-card-main" onclick="startBridgeTransferFromLocal('${g.id}')">
+              🔄 Pasar Partida a Xbox PC / Game Pass
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="openFolder('${(g.save_path || '').replace(/\\/g, '\\\\')}')">
+              📁 Abrir Carpeta
+            </button>
+          ` : `
+            <button class="btn btn-secondary btn-sm" style="grid-column: span 2;" disabled>
+              Sin partidas activas
+            </button>
+          `}
         </div>
-        <div class="save-info-row">
-          <span class="save-info-label">Archivos:</span>
-          <span class="save-info-value" style="font-size: 0.72rem;">${filesList}</span>
-        </div>
-        ${g.save_path ? `
-        <div class="save-info-row">
-          <span class="save-info-label">Ruta:</span>
-          <span class="save-info-value" title="${g.save_path}">${g.save_path}</span>
-        </div>` : ''}
-      </div>
-
-      <div class="game-actions">
-        ${fileCount > 0 ? `
-          <button class="btn btn-action-xbox btn-card-main" onclick="startBridgeTransferFromLocal('${g.id}')">
-            🔄 Pasar Partida a Xbox PC / Game Pass
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="openFolder('${(g.save_path || '').replace(/\\/g, '\\\\')}')">
-            📁 Abrir Carpeta
-          </button>
-        ` : `
-          <button class="btn btn-secondary btn-sm" style="grid-column: span 2;" disabled>
-            Sin partidas activas
-          </button>
-        `}
       </div>
     `;
     epicGrid.appendChild(card);
@@ -895,58 +913,52 @@ function renderGames(games) {
     const card = document.createElement('div');
     card.className = 'game-card';
 
-    const logoHtml = getGameCoverHtml(g, '🎮', 'xbox-badge');
-
     const saveDetails = g.save_details;
     const saveCountText = saveDetails ? `${saveDetails.container_count} Ranuras (${saveDetails.total_size_kb} KB)` : 'Sin partidas detectadas';
     const lastSavedText = saveDetails ? saveDetails.last_saved : 'N/A';
+    const bannerHtml = getGameCoverBannerHtml(g, '🎮', 'xbox', '🟢 Xbox PC');
 
     card.innerHTML = `
-      <div class="game-card-header">
-        ${logoHtml}
-        <div class="game-meta">
+      ${bannerHtml}
+      <div class="game-card-body">
+        <div>
           <div class="game-title" title="${g.name}">${g.name}</div>
-          <div class="game-publisher">${g.publisher} &bull; v${g.version}</div>
-          <div class="game-tags">
-            <span class="tag ${g.is_installed ? 'tag-active' : ''}">${g.is_installed ? 'Instalado' : 'Solo Guardado'}</span>
-            ${g.title_id ? `<span class="tag">TitleID: ${g.title_id}</span>` : ''}
-            ${g.has_saves ? `<span class="tag tag-active">💾 Partidas WGS</span>` : ''}
+          <div class="game-publisher">${g.publisher} &bull; v${g.version} ${g.is_installed ? '(Instalado)' : ''}</div>
+        </div>
+
+        <div class="game-save-info">
+          <div class="save-info-row">
+            <span class="save-info-label">Estado Partidas:</span>
+            <span class="save-info-value" style="color: ${g.has_saves ? 'var(--xbox-neon)' : 'var(--text-muted)'}">${saveCountText}</span>
           </div>
+          <div class="save-info-row">
+            <span class="save-info-label">Último Guardado:</span>
+            <span class="save-info-value">${lastSavedText}</span>
+          </div>
+          ${g.install_path ? `
+          <div class="save-info-row">
+            <span class="save-info-label">Instalación:</span>
+            <span class="save-info-value" title="${g.install_path}">${g.install_path}</span>
+          </div>` : ''}
         </div>
-      </div>
 
-      <div class="game-save-info">
-        <div class="save-info-row">
-          <span class="save-info-label">Estado Partidas:</span>
-          <span class="save-info-value" style="color: ${g.has_saves ? 'var(--xbox-neon)' : 'var(--text-muted)'}">${saveCountText}</span>
+        <div class="game-actions">
+          ${g.has_saves ? `
+            <button class="btn btn-card-main" onclick="openSlotsModal('${g.id}')">
+              🔍 Inspeccionar Ranuras (${saveDetails ? saveDetails.container_count : 0})
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="exportGameRawById('${g.id}')" title="Exportar partidas a archivos .sav legibles">
+              📂 Exportar .SAV
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="exportGameBackupById('${g.id}')" title="Crear backup completo en ZIP">
+              📦 Backup .ZIP
+            </button>
+          ` : `
+            <button class="btn btn-secondary btn-sm" style="grid-column: span 2;" disabled>
+              Sin partidas activas para exportar
+            </button>
+          `}
         </div>
-        <div class="save-info-row">
-          <span class="save-info-label">Último Guardado:</span>
-          <span class="save-info-value">${lastSavedText}</span>
-        </div>
-        ${g.install_path ? `
-        <div class="save-info-row">
-          <span class="save-info-label">Instalación:</span>
-          <span class="save-info-value" title="${g.install_path}">${g.install_path}</span>
-        </div>` : ''}
-      </div>
-
-      <div class="game-actions">
-        ${g.has_saves ? `
-          <button class="btn btn-card-main" onclick="openSlotsModal('${g.id}')">
-            🔍 Inspeccionar y Gestionar Ranuras (${saveDetails ? saveDetails.container_count : 0})
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="exportGameRawById('${g.id}')" title="Exportar partidas a archivos .sav legibles">
-            📂 Exportar .SAV
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="exportGameBackupById('${g.id}')" title="Crear backup completo en ZIP">
-            📦 Backup .ZIP
-          </button>
-        ` : `
-          <button class="btn btn-secondary btn-sm" style="grid-column: span 2;" disabled>
-            Sin partidas activas para exportar
-          </button>
-        `}
       </div>
     `;
 
