@@ -1,5 +1,6 @@
 import os
 import glob
+import datetime
 import xml.etree.ElementTree as ET
 import json
 import base64
@@ -22,6 +23,7 @@ class XboxScanner:
         # Match installed games with WGS saves
         for ig in installed_games:
             pkg_name = ig.get("package_name")
+            clean_display_name = ig.get("display_name") or ig.get("name") or "Juego Xbox"
             matched_save = None
             for ws in wgs_saves:
                 if ws["package_id"] == pkg_name or (pkg_name and pkg_name.lower() in ws["package_id"].lower()):
