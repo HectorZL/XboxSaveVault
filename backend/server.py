@@ -69,6 +69,18 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
                 self.send_json({"success": False, "error": str(e)}, 500)
             return
 
+        elif path == "/api/game-cover":
+            try:
+                params = urllib.parse.parse_qs(parsed.query)
+                game_name = params.get("name", [""])[0]
+                appid = params.get("appid", [""])[0]
+                from .covers import GameCoverService
+                cover_url = GameCoverService.get_cover(game_name, appid)
+                self.send_json({"success": True, "cover_url": cover_url})
+            except Exception as e:
+                self.send_json({"success": False, "error": str(e)}, 500)
+            return
+
         # Serve static web files
         self.serve_static(path)
 

@@ -355,6 +355,40 @@ function updateStats() {
   if (countEpic) countEpic.textContent = (allData.epic ? allData.epic.length : 0) + (allData.local_saves ? allData.local_saves.length : 0);
 }
 
+// Helper to render Cover Banner Image or Fallback Badge
+function getGameCoverHtml(game, defaultEmoji = '🎮', badgeClass = '') {
+  const coverUrl = game.cover_url || (game.appid ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${game.appid}/header.jpg` : null);
+  if (game.logo_base64) {
+    return `<img src="${game.logo_base64}" alt="${game.name}" class="game-logo">`;
+  }
+  if (coverUrl) {
+    return `
+      <div class="game-cover-wrap">
+        <img src="${coverUrl}" alt="${game.name}" class="game-cover-img" onerror="this.onerror=null; this.parentElement.outerHTML='<div class=\\'game-logo-placeholder ${badgeClass}\\'>${defaultEmoji}</div>'">
+      </div>
+    `;
+  }
+  return `<div class="game-cover-wrap" data-cover-pending="${game.name}">
+            <div class="game-logo-placeholder ${badgeClass}">${defaultEmoji}</div>
+          </div>`;
+}
+
+// Background cover resolver for items without covers
+function resolveMissingCovers() {
+  document.querySelectorAll('[data-cover-pending]').forEach(async (el) => {
+    const gameName = el.dataset.coverPending;
+    if (!gameName) return;
+    try {
+      const res = await fetch(`/api/game-cover?name=${encodeURIComponent(gameName)}`);
+      const data = await res.json();
+      if (data.success && data.cover_url) {
+        el.innerHTML = `<img src="${data.cover_url}" alt="${gameName}" class="game-cover-img" onerror="this.style.display='none'">`;
+        delete el.dataset.coverPending;
+      }
+    } catch (e) {}
+  });
+}
+
 // Render Steam Games
 function renderSteamGames(games) {
   if (!steamGrid) return;
@@ -371,10 +405,11 @@ function renderSteamGames(games) {
     const saveDetails = g.save_details;
     const saveCountText = saveDetails ? `${saveDetails.files.length} archivos (${saveDetails.total_size_kb} KB)` : (g.extra_save_files && g.extra_save_files.length > 0 ? `${g.extra_save_files.length} archivos locales` : 'Sin partidas detectadas');
     const filesList = saveDetails ? saveDetails.files : (g.extra_save_files || []);
+    const coverHtml = getGameCoverHtml(g, '🔵', 'steam-badge');
 
     card.innerHTML = `
       <div class="game-card-header">
-        <div class="game-logo-placeholder" style="background: linear-gradient(135deg, #0077b6, #00121e);">🔵</div>
+        ${coverHtml}
         <div class="game-meta">
           <div class="game-title" title="${g.name}">${g.name}</div>
           <div class="game-publisher">Steam AppID: <code>${g.appid}</code></div>
@@ -418,6 +453,7 @@ function renderSteamGames(games) {
     `;
     steamGrid.appendChild(card);
   });
+  resolveMissingCovers();
 }
 
 // Render Epic & Local Games
@@ -438,10 +474,12 @@ function renderEpicGames(epicList, localList) {
     const fileCount = g.file_count || (g.files ? g.files.length : 0);
     const sizeText = g.total_size_kb ? `${g.total_size_kb} KB` : '';
     const filesList = g.files ? g.files.map(f => f.name).slice(0, 3).join(', ') : 'N/A';
+    const badgeEmoji = g.platform === 'Epic Games' ? '⚫' : (g.platform === 'AppData LocalLow' ? '📁' : '💾');
+    const coverHtml = getGameCoverHtml(g, badgeEmoji, 'epic-badge');
 
     card.innerHTML = `
       <div class="game-card-header">
-        <div class="game-logo-placeholder" style="background: linear-gradient(135deg, #334155, #0f172a);">⚫</div>
+        ${coverHtml}
         <div class="game-meta">
           <div class="game-title" title="${g.name}">${g.name}</div>
           <div class="game-publisher">${g.developer || g.platform}</div>
@@ -485,6 +523,7 @@ function renderEpicGames(epicList, localList) {
     `;
     epicGrid.appendChild(card);
   });
+  resolveMissingCovers();
 }
 
 // Cross-Save Bridge Setup
@@ -856,9 +895,7 @@ function renderGames(games) {
     const card = document.createElement('div');
     card.className = 'game-card';
 
-    const logoHtml = g.logo_base64 
-      ? `<img src="${g.logo_base64}" alt="${g.name}" class="game-logo">`
-      : `<div class="game-logo-placeholder">🎮</div>`;
+    const logoHtml = getGameCoverHtml(g, '🎮', 'xbox-badge');
 
     const saveDetails = g.save_details;
     const saveCountText = saveDetails ? `${saveDetails.container_count} Ranuras (${saveDetails.total_size_kb} KB)` : 'Sin partidas detectadas';
@@ -915,6 +952,7 @@ function renderGames(games) {
 
     gamesGrid.appendChild(card);
   });
+  resolveMissingCovers();
 }
 
 // Open Slots Modal

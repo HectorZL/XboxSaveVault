@@ -18,6 +18,10 @@ if %errorlevel% neq 0 (
 )
 
 echo.
+echo Cerrando instancias previas de XboxSaveVault si estan abiertas...
+taskkill /f /im XboxSaveVault.exe >nul 2>&1
+
+echo.
 echo [1/2] Compilando ejecutable silencioso sin consola (One-File + Icono + Ventana Nativa)...
 python -m PyInstaller --noconfirm --onefile --clean --noconsole --name "XboxSaveVault" --icon "app_icon.ico" --add-data "web;web" --collect-all webview xbox_save_manager.py
 

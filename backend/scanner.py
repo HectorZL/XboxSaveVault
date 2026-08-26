@@ -473,6 +473,7 @@ class XboxScanner:
                                     "last_modified": max(f["modified"] for f in extra_files) if extra_files else "N/A"
                                 }
 
+                            cover_img = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/header.jpg"
                             installed_games.append({
                                 "id": f"steam_{app_id}",
                                 "appid": app_id,
@@ -482,7 +483,8 @@ class XboxScanner:
                                 "has_saves": active_save_details is not None,
                                 "save_details": active_save_details,
                                 "extra_save_files": extra_files,
-                                "remote_save_path": active_save_details["remote_path"] if active_save_details else None
+                                "remote_save_path": active_save_details["remote_path"] if active_save_details else None,
+                                "cover_url": cover_img
                             })
                     except:
                         pass
@@ -499,7 +501,8 @@ class XboxScanner:
                     "has_saves": True,
                     "save_details": sdata,
                     "extra_save_files": [],
-                    "remote_save_path": sdata["remote_path"]
+                    "remote_save_path": sdata["remote_path"],
+                    "cover_url": f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/header.jpg"
                 })
 
         return installed_games
@@ -569,6 +572,7 @@ class XboxScanner:
         """Scans Epic Games Launcher manifests, AppData LocalLow, and %USERPROFILE%\\Saved Games."""
         import datetime
         epic_games = []
+        from .covers import GameCoverService
         epic_manifests = r"C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests"
         if os.path.exists(epic_manifests):
             for item in os.listdir(epic_manifests):
@@ -579,6 +583,7 @@ class XboxScanner:
                         disp = data.get("DisplayName")
                         inst = data.get("InstallLocation")
                         if disp:
+                            cover = GameCoverService.get_cover(disp)
                             epic_games.append({
                                 "id": f"epic_{data.get('AppName', disp)}",
                                 "name": disp,
@@ -587,7 +592,8 @@ class XboxScanner:
                                 "app_name": data.get("AppName"),
                                 "has_saves": False,
                                 "save_path": None,
-                                "save_files": []
+                                "save_files": [],
+                                "cover_url": cover
                             })
                     except:
                         pass
@@ -611,6 +617,7 @@ class XboxScanner:
                                 "modified": datetime.datetime.fromtimestamp(os.path.getmtime(full_rf)).strftime("%Y-%m-%d %H:%M:%S")
                             })
                     if files:
+                        cover = GameCoverService.get_cover(sub)
                         local_saves.append({
                             "id": f"savedgames_{sub}",
                             "name": sub,
@@ -620,7 +627,8 @@ class XboxScanner:
                             "file_count": len(files),
                             "total_size": sum(f["size"] for f in files),
                             "total_size_kb": round(sum(f["size"] for f in files) / 1024, 2),
-                            "last_modified": max(f["modified"] for f in files) if files else "N/A"
+                            "last_modified": max(f["modified"] for f in files) if files else "N/A",
+                            "cover_url": cover
                         })
 
         # Scan %USERPROFILE%\AppData\LocalLow
@@ -645,6 +653,7 @@ class XboxScanner:
                                             "modified": datetime.datetime.fromtimestamp(os.path.getmtime(full_rf)).strftime("%Y-%m-%d %H:%M:%S")
                                         })
                             if files:
+                                cover = GameCoverService.get_cover(title)
                                 local_saves.append({
                                     "id": f"locallow_{dev}_{title}",
                                     "name": title,
@@ -655,7 +664,8 @@ class XboxScanner:
                                     "file_count": len(files),
                                     "total_size": sum(f["size"] for f in files),
                                     "total_size_kb": round(sum(f["size"] for f in files) / 1024, 2),
-                                    "last_modified": max(f["modified"] for f in files) if files else "N/A"
+                                    "last_modified": max(f["modified"] for f in files) if files else "N/A",
+                                    "cover_url": cover
                                 })
 
         return epic_games, local_saves
