@@ -355,10 +355,23 @@ class WGSEngine:
                 "containers": []
             }
 
-        # Find matching container
+        # Find matching container (by name, guid, inner filename, or alias like user1.dat <-> save1)
         target_container = None
+        c_name_norm = container_name.lower().strip()
+        alias_name = c_name_norm.replace("user", "save").replace(".dat", "").replace(".sav", "")
+
         for c in parsed["containers"]:
-            if c["name"].lower() == container_name.lower() or c["guid"].lower() == container_name.lower():
+            c_curr_name = c["name"].lower().strip()
+            # 1. Exact container name match or guid
+            if c_curr_name == c_name_norm or c["guid"].lower() == c_name_norm:
+                target_container = c
+                break
+            # 2. Inner filename match (e.g. user1.dat inside save1)
+            if c.get("files") and any(f.get("filename", "").lower() == c_name_norm for f in c["files"]):
+                target_container = c
+                break
+            # 3. Alias match (e.g. user1.dat -> save1)
+            if c_curr_name == alias_name or alias_name in c_curr_name:
                 target_container = c
                 break
 
