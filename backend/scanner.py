@@ -29,6 +29,33 @@ class XboxScanner:
                     matched_pkg_ids.add(ws["package_id"])
                     break
 
+            # If matched_save is None, check if package folder exists in %LOCALAPPDATA%\Packages
+            wgs_root = matched_save.get("wgs_path") if matched_save else None
+            wgs_user_dirs = matched_save.get("user_dirs") if matched_save else []
+
+            if not wgs_root and pkg_name:
+                packages_dir = os.path.expandvars(r"%LOCALAPPDATA%\Packages")
+                for p in os.listdir(packages_dir) if os.path.exists(packages_dir) else []:
+                    if p.startswith(pkg_name):
+                        cand_wgs = os.path.join(packages_dir, p, "SystemAppData", "wgs")
+                        wgs_root = cand_wgs
+                        # Create standard user dir path if known title_id and XUID exist
+                        from .converters import SaveTools
+                        sys_ids = SaveTools.detect_system_user_ids()
+                        if sys_ids.get("xbox_xuids") and ig.get("title_id"):
+                            xuid = sys_ids["xbox_xuids"][0]["hex"]
+                            tid = ig["title_id"].upper().zfill(32)
+                            user_dir_name = f"{xuid}_{tid}"
+                            cand_user_dir = os.path.join(cand_wgs, user_dir_name)
+                            wgs_user_dirs = [{
+                                "user_title_id": user_dir_name,
+                                "path": cand_user_dir,
+                                "sync_id": "",
+                                "pkg_name": pkg_name,
+                                "containers": []
+                            }]
+                        break
+
             game_entry = {
                 "id": ig.get("id") or ig.get("name"),
                 "name": ig.get("display_name") or ig.get("name"),
@@ -40,10 +67,10 @@ class XboxScanner:
                 "logo_path": ig.get("logo_path"),
                 "logo_base64": ig.get("logo_base64"),
                 "is_installed": True,
-                "has_saves": matched_save is not None,
+                "has_saves": matched_save is not None or (wgs_user_dirs and len(wgs_user_dirs[0]["containers"]) > 0),
                 "save_details": matched_save.get("details") if matched_save else None,
-                "wgs_root": matched_save.get("wgs_path") if matched_save else None,
-                "wgs_user_dirs": matched_save.get("user_dirs") if matched_save else []
+                "wgs_root": wgs_root,
+                "wgs_user_dirs": wgs_user_dirs
             }
             merged_games.append(game_entry)
 
@@ -138,6 +165,21 @@ class XboxScanner:
             publisher = shell_vis.get("PublisherDisplayName") if shell_vis is not None else "Unknown"
             logo_rel = shell_vis.get("StoreLogo") or shell_vis.get("Square150x150Logo") if shell_vis is not None else None
 
+            # Check OverrideDisplayName in Executable
+            exe_list = root.find("ExecutableList")
+            if exe_list is not None:
+                exe_elem = exe_list.find("Executable")
+                if exe_elem is not None:
+                    override_name = exe_elem.get("OverrideDisplayName")
+                    if override_name and not override_name.startswith("ms-resource:"):
+                        disp_name = override_name
+
+            # Check Description if DefaultDisplayName is package id
+            if not disp_name or disp_name == pkg_name:
+                desc = shell_vis.get("Description") if shell_vis is not None else None
+                if desc and not desc.startswith("ms-resource:") and len(desc) < 40:
+                    disp_name = desc
+
             title_id_elem = root.find("TitleId")
             title_id = title_id_elem.text.strip() if title_id_elem is not None and title_id_elem.text else None
 
@@ -152,10 +194,14 @@ class XboxScanner:
                     except:
                         pass
 
+            clean_display_name = disp_name or pkg_name or os.path.basename(base_dir)
+            if clean_display_name.startswith("MotionTwin."):
+                clean_display_name = "Dead Cells"
+
             return {
-                "id": pkg_name or disp_name,
-                "name": disp_name or pkg_name or os.path.basename(base_dir),
-                "display_name": disp_name or pkg_name or os.path.basename(base_dir),
+                "id": pkg_name or clean_display_name,
+                "name": clean_display_name,
+                "display_name": clean_display_name,
                 "publisher": publisher,
                 "version": version,
                 "package_name": pkg_name,

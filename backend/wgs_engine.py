@@ -319,25 +319,14 @@ class WGSEngine:
         }
 
     @classmethod
-    def inject_raw_save_to_slot(cls, user_wgs_dir, container_name, raw_save_data_or_path):
+    def inject_raw_save_to_slot(cls, user_wgs_dir, container_name, raw_save_data_or_path, pkg_name=None):
         """
-        Injects an external save file (.sav / raw binary) into a specific WGS container slot.
-        Rebuilds blob file, updates container.<seq> and containers.index.
+        Injects an external save file (.sav / .dat / binary) into a specific WGS container slot.
+        If container does not exist or index is missing, initializes and adds it automatically.
         """
+        os.makedirs(user_wgs_dir, exist_ok=True)
         index_path = os.path.join(user_wgs_dir, "containers.index")
         parsed = cls.parse_wgs_container_index(index_path)
-        if not parsed:
-            raise ValueError("Invalid WGS containers.index")
-
-        # Find matching container
-        target_container = None
-        for c in parsed["containers"]:
-            if c["name"].lower() == container_name.lower() or c["guid"].lower() == container_name.lower():
-                target_container = c
-                break
-
-        if not target_container:
-            raise ValueError(f"Container slot '{container_name}' not found in WGS index")
 
         # Read new save data
         if isinstance(raw_save_data_or_path, str) and os.path.isfile(raw_save_data_or_path):
@@ -349,28 +338,69 @@ class WGSEngine:
             raise ValueError("raw_save_data_or_path must be a valid file path or bytes")
 
         new_size = len(new_data)
+        now_ft = dt_to_filetime()
+
+        if not parsed:
+            # Initialize new containers.index
+            target_pkg = pkg_name or os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(user_wgs_dir))))
+            parsed = {
+                "version": 14,
+                "count": 0,
+                "flags": 0,
+                "pkg_name": target_pkg,
+                "filetime": now_ft,
+                "sync_flag": 2,
+                "sync_id": str(uuid.uuid4()),
+                "index_path": index_path,
+                "containers": []
+            }
+
+        # Find matching container
+        target_container = None
+        for c in parsed["containers"]:
+            if c["name"].lower() == container_name.lower() or c["guid"].lower() == container_name.lower():
+                target_container = c
+                break
+
+        if not target_container:
+            # Create a brand new container entry
+            new_guid = uuid.uuid4().hex.upper()
+            target_container = {
+                "index": len(parsed["containers"]),
+                "name": container_name,
+                "cloud_id": container_name,
+                "tag": f"\"0x{uuid.uuid4().hex[:16].upper()}\"",
+                "seq": 1,
+                "guid": new_guid,
+                "flags": 2,
+                "filetime": now_ft,
+                "modified": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "size": new_size,
+                "dir_path": os.path.join(user_wgs_dir, new_guid),
+                "meta_path": os.path.join(user_wgs_dir, new_guid, "container.1"),
+                "files": []
+            }
+            parsed["containers"].append(target_container)
+
         container_dir = target_container["dir_path"]
         os.makedirs(container_dir, exist_ok=True)
 
         # Get existing blob or create a new blob GUID
-        if target_container["files"]:
+        if target_container.get("files") and len(target_container["files"]) > 0:
             blob_guid = target_container["files"][0]["blob_guid"]
             file_title = target_container["files"][0]["filename"]
         else:
             blob_guid = uuid.uuid4().hex.upper()
-            file_title = "Data"
+            file_title = "Data" if not (container_name.endswith(".dat") or container_name.endswith(".sav")) else container_name
 
         blob_path = os.path.join(container_dir, blob_guid)
         with open(blob_path, "wb") as bf:
             bf.write(new_data)
 
         # Update container.<seq> file
-        seq = target_container["seq"]
+        seq = target_container.get("seq", 1)
         meta_path = os.path.join(container_dir, f"container.{seq}")
         
-        # Write container.<seq>
-        # Header: uint32 version (4), uint32 count (1)
-        # Entry: 128 bytes wchar filename, 16 bytes container GUID, 16 bytes blob GUID
         with open(meta_path, "wb") as mf:
             mf.write(struct.pack("<II", 4, 1))
             name_buf = file_title.encode('utf-16le').ljust(128, b'\x00')[:128]
@@ -379,11 +409,9 @@ class WGSEngine:
             mf.write(format_guid_to_bytes(blob_guid))
 
         # Re-write containers.index with updated timestamp and size
-        now_ft = dt_to_filetime()
         target_container["size"] = new_size
         target_container["filetime"] = now_ft
 
-        # Build new containers.index binary
         out_stream = io.BytesIO()
         out_stream.write(struct.pack("<II", parsed["version"], len(parsed["containers"])))
         out_stream.write(struct.pack("<I", parsed["flags"]))
