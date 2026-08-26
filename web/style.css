@@ -734,6 +734,73 @@ body {
   color: #fde68a;
 }
 
+/* Tools Modal Styles */
+.detected-ids-box {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+}
+
+.ids-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--xbox-neon);
+  margin-bottom: 8px;
+}
+
+.ids-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.id-badge {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.id-badge:hover {
+  background: rgba(16, 230, 76, 0.15);
+  border-color: var(--xbox-neon);
+}
+
+.tool-card {
+  background: rgba(15, 21, 31, 0.7);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tool-card h4 {
+  font-size: 0.95rem;
+  color: #fff;
+}
+
+.tool-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.inspect-result {
+  background: #080a0e;
+  border: 1px solid rgba(0, 210, 255, 0.25);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: #a5f3fc;
+  line-height: 1.5;
+}
+
 .modal-footer {
   display: flex;
   justify-content: flex-end;

@@ -36,6 +36,106 @@ function setupEventListeners() {
     openImportModal();
   });
 
+  document.getElementById('btnOpenToolsModal').addEventListener('click', () => {
+    openToolsModal();
+  });
+
+  // Tools Modal File Browsers & Actions
+  document.getElementById('btnBrowseInspectFile').addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/open-file-selector', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'file', filter: 'Save Files (*.sav;*.dat;*.*)|*.sav;*.dat;*.*' })
+      });
+      const data = await res.json();
+      if (data.selected_path) {
+        document.getElementById('inspectFilePath').value = data.selected_path;
+      }
+    } catch (err) {
+      showToast('Error abriendo selector de archivos', 'error');
+    }
+  });
+
+  document.getElementById('btnRunInspect').addEventListener('click', async () => {
+    const filePath = document.getElementById('inspectFilePath').value.trim();
+    if (!filePath) {
+      showToast('Selecciona un archivo para inspeccionar', 'error');
+      return;
+    }
+    const resultBox = document.getElementById('inspectResult');
+    resultBox.style.display = 'block';
+    resultBox.innerHTML = 'Analizando cabecera...';
+
+    try {
+      const res = await fetch('/api/tools/inspect-save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_path: filePath })
+      });
+      const data = await res.json();
+      if (data.success) {
+        const info = data.info;
+        resultBox.innerHTML = `
+          <strong>Archivo:</strong> ${info.file_name} (${info.size_kb} KB)<br>
+          <strong>Formato:</strong> ${info.format}<br>
+          ${info.engine_version ? `<strong>Versión de Motor:</strong> ${info.engine_version}<br>` : ''}
+          ${info.save_game_version ? `<strong>Versión SaveGame:</strong> ${info.save_game_version}<br>` : ''}
+          <strong>IDs Detectados:</strong> ${info.detected_ids.length > 0 ? info.detected_ids.join(', ') : 'Ningún SteamID conocido encontrado en texto plano'}
+        `;
+        logActivity(`[INSPECT] Archivo ${info.file_name} analizado: ${info.format}`, 'info');
+      } else {
+        resultBox.innerHTML = `<span style="color: var(--accent-red)">Error: ${data.error}</span>`;
+      }
+    } catch (err) {
+      resultBox.innerHTML = `<span style="color: var(--accent-red)">Error de conexión</span>`;
+    }
+  });
+
+  document.getElementById('btnBrowsePatchFile').addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/open-file-selector', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'file', filter: 'Save Files (*.sav;*.dat;*.*)|*.sav;*.dat;*.*' })
+      });
+      const data = await res.json();
+      if (data.selected_path) {
+        document.getElementById('patchInputFile').value = data.selected_path;
+      }
+    } catch (err) {
+      showToast('Error abriendo selector de archivos', 'error');
+    }
+  });
+
+  document.getElementById('btnRunPatchId').addEventListener('click', async () => {
+    const file = document.getElementById('patchInputFile').value.trim();
+    const oldId = document.getElementById('patchOldId').value.trim();
+    const newId = document.getElementById('patchNewId').value.trim();
+
+    if (!file || !oldId || !newId) {
+      showToast('Debes indicar el archivo, el ID de origen y el ID de destino', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/tools/patch-id', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input_file: file, old_id: oldId, new_id: newId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`¡Parche aplicado! (${data.replacements_count} coincidencias reemplazadas)`, 'success');
+        logActivity(`[PATCH] ${data.replacements_count} ocurrencias de ID reemplazadas en ${file}`, 'success');
+      } else {
+        showToast(`Error: ${data.error}`, 'error');
+      }
+    } catch (err) {
+      showToast('Error aplicando parche', 'error');
+    }
+  });
+
   document.getElementById('btnClearLogs').addEventListener('click', () => {
     consoleLogs.innerHTML = '';
   });
@@ -373,6 +473,53 @@ function openImportModal() {
 
   document.getElementById('importZipPath').value = '';
   importBackupModal.classList.add('active');
+}
+
+// Open Advanced Tools Modal
+async function openToolsModal() {
+  const container = document.getElementById('detectedAccounts');
+  container.innerHTML = '<span>Detectando IDs en el sistema...</span>';
+  document.getElementById('toolsModal').classList.add('active');
+
+  try {
+    const res = await fetch('/api/tools/user-ids');
+    const data = await res.json();
+    if (data.success) {
+      container.innerHTML = '';
+      const { xbox_xuids, steam_ids } = data.data;
+
+      if (xbox_xuids.length === 0 && steam_ids.length === 0) {
+        container.innerHTML = '<span style="color: var(--text-muted)">No se detectaron IDs en las rutas estándar.</span>';
+        return;
+      }
+
+      xbox_xuids.forEach(x => {
+        const badge = document.createElement('div');
+        badge.className = 'id-badge';
+        badge.title = 'Clic para usar como ID Destino';
+        badge.innerHTML = `🟢 Xbox XUID (Hex): <strong>${x.hex}</strong>`;
+        badge.onclick = () => {
+          document.getElementById('patchNewId').value = x.hex;
+          showToast(`Copiado ${x.hex} a ID Destino`);
+        };
+        container.appendChild(badge);
+      });
+
+      steam_ids.forEach(s => {
+        const badge = document.createElement('div');
+        badge.className = 'id-badge';
+        badge.title = 'Clic para usar como ID Origen';
+        badge.innerHTML = `🔵 SteamID64: <strong>${s.steam64}</strong>`;
+        badge.onclick = () => {
+          document.getElementById('patchOldId').value = s.steam64;
+          showToast(`Copiado ${s.steam64} a ID Origen`);
+        };
+        container.appendChild(badge);
+      });
+    }
+  } catch (err) {
+    container.innerHTML = '<span style="color: var(--accent-red)">Error al consultar IDs.</span>';
+  }
 }
 
 function closeModal(modalId) {

@@ -32,6 +32,12 @@
           </svg>
           Re-Escanear Sistema
         </button>
+        <button id="btnOpenToolsModal" class="btn btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+          </svg>
+          Herramientas & Parcheador ID
+        </button>
         <button id="btnOpenBackups" class="btn btn-secondary">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -212,6 +218,69 @@
         <div class="modal-footer">
           <button class="btn btn-secondary" onclick="closeModal('importBackupModal')">Cancelar</button>
           <button id="btnConfirmRestore" class="btn btn-primary">Restaurar Partida</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Advanced Tools & ID Patcher Modal -->
+  <div id="toolsModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-badge">HERRAMIENTAS AVANZADAS & ADAPTADORES</div>
+          <h3>Parcheador de IDs y Analizador de Formato</h3>
+        </div>
+        <button class="modal-close" onclick="closeModal('toolsModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Detected System IDs -->
+        <div class="detected-ids-box">
+          <div class="ids-title">🆔 Cuentas Detectadas en este PC:</div>
+          <div id="detectedAccounts" class="ids-grid">
+            <!-- Injected via JS -->
+          </div>
+        </div>
+
+        <!-- File Inspector -->
+        <div class="tool-card">
+          <h4>🔍 1. Inspeccionar Archivo de Partida (.sav)</h4>
+          <p class="tool-desc">Analiza la cabecera (Unreal GVAS, versión del motor, IDs de Steam incrustados, base de datos o JSON).</p>
+          <div class="input-with-btn">
+            <input type="text" id="inspectFilePath" class="form-control" placeholder="C:\ruta\a\partida.sav">
+            <button id="btnBrowseInspectFile" class="btn btn-secondary">Examinar...</button>
+            <button id="btnRunInspect" class="btn btn-action-accent">Analizar</button>
+          </div>
+          <div id="inspectResult" class="inspect-result" style="display: none;"></div>
+        </div>
+
+        <!-- ID Replacer -->
+        <div class="tool-card">
+          <h4>🔄 2. Parchear / Convertir ID de Usuario (SteamID64 ⇄ Xbox XUID)</h4>
+          <p class="tool-desc">Para juegos que incrustan el ID de cuenta (ej. Monster Hunter, Deep Rock Galactic, Palworld, Starfield).</p>
+          
+          <div class="form-group">
+            <label>Archivo a modificar:</label>
+            <div class="input-with-btn">
+              <input type="text" id="patchInputFile" class="form-control" placeholder="C:\ruta\a\partida.sav">
+              <button id="btnBrowsePatchFile" class="btn btn-secondary">Examinar...</button>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label>ID Origen (ej. SteamID64):</label>
+              <input type="text" id="patchOldId" class="form-control" placeholder="76561198000000000">
+            </div>
+            <div class="form-group">
+              <label>ID Destino (ej. Xbox XUID):</label>
+              <input type="text" id="patchNewId" class="form-control" placeholder="000901F3C07524B7">
+            </div>
+          </div>
+
+          <div class="modal-footer" style="padding-top: 8px;">
+            <button id="btnRunPatchId" class="btn btn-primary">Aplicar Parche de ID</button>
+          </div>
         </div>
       </div>
     </div>

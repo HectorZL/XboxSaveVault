@@ -52,6 +52,15 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
             self.send_json({"success": True, "path": DEFAULT_BACKUP_ROOT})
             return
 
+        elif path == "/api/tools/user-ids":
+            try:
+                from .converters import SaveTools
+                data = SaveTools.detect_system_user_ids()
+                self.send_json({"success": True, "data": data})
+            except Exception as e:
+                self.send_json({"success": False, "error": str(e)}, 500)
+            return
+
         # Serve static web files
         self.serve_static(path)
 
@@ -97,6 +106,21 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
                 container_name = req_data.get("container_name")
                 raw_file_path = req_data.get("raw_file_path")
                 res = WGSEngine.inject_raw_save_to_slot(user_wgs_dir, container_name, raw_file_path)
+                self.send_json(res)
+
+            elif path == "/api/tools/inspect-save":
+                file_path = req_data.get("file_path")
+                from .converters import SaveTools
+                res = SaveTools.inspect_save_file(file_path)
+                self.send_json({"success": True, "info": res})
+
+            elif path == "/api/tools/patch-id":
+                input_file = req_data.get("input_file")
+                output_file = req_data.get("output_file") or input_file
+                old_id = req_data.get("old_id", "")
+                new_id = req_data.get("new_id", "")
+                from .converters import SaveTools
+                res = SaveTools.patch_account_id(input_file, output_file, old_id, new_id)
                 self.send_json(res)
 
             elif path == "/api/open-folder":
