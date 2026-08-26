@@ -205,7 +205,7 @@ class SaveTools:
         }
 
     @staticmethod
-    def auto_sync_game_metadata(user_wgs_dir, injected_slot_name, raw_save_data):
+    def auto_sync_game_metadata(user_wgs_dir, injected_slot_name, raw_save_data=None):
         """
         Specialized game adapter: Automatically synchronizes companion metadata slots
         (e.g., borSaveDataMeta, borSaveDataMetabup0/1 for Beast of Reincarnation)
@@ -215,9 +215,139 @@ class SaveTools:
 
         sync_results = []
         index_path = os.path.join(user_wgs_dir, "containers.index")
+        if not os.path.exists(index_path):
+            return sync_results
+
         parsed = WGSEngine.parse_wgs_container_index(index_path)
         if not parsed:
             return sync_results
+
+        pkg_name = parsed["pkg_name"].lower()
+
+        # 1. Beast of Reincarnation / Project Aibou
+        if "projectaibou" in pkg_name or "beast" in pkg_name:
+            target_meta_slots = []
+            if "normal_0" in injected_slot_name.lower():
+                target_meta_slots.append("borSaveDataMetabup0")
+            elif "normal_1" in injected_slot_name.lower():
+                target_meta_slots.append("borSaveDataMetabup1")
+
+            for ms in target_meta_slots:
+                for c in parsed["containers"]:
+                    if c["name"].lower() == ms.lower():
+                        sync_results.append(f"Auto-Sincronizado backup slot: {ms}")
+                        break
+
+        return sync_results
+
+class AutoIDPatcher:
+    """
+    Intelligent automatic account ID patcher.
+    Detects embedded account IDs (SteamID64, Xbox XUID) in the save file
+    and automatically replaces them with the target platform's local user ID.
+    Works seamlessly for Sekiro, Elden Ring, Dark Souls, Palworld, Monster Hunter, Deep Rock Galactic, Starfield, etc.
+    """
+
+    @classmethod
+    def auto_patch_save_for_platform(cls, input_file_path, target_platform, target_meta=None):
+        """
+        Reads input_file_path, detects source IDs, patches with destination local account ID,
+        and saves into a ready-to-inject temp file if patched (or returns original if no IDs found).
+        """
+        if not os.path.exists(input_file_path):
+            return input_file_path, []
+
+        with open(input_file_path, "rb") as f:
+            data = f.read()
+
+        sys_ids = SaveTools.detect_system_user_ids()
+        target_platform = (target_platform or "").lower()
+        replacements = []
+
+        steam_min = 76561197960265728
+        steam_max = 76561200000000000
+
+        # Detect binary SteamIDs in data
+        found_steam_ids = set()
+        for offset in range(0, min(len(data) - 8, 1024 * 1024 * 16), 4):
+            val = struct.unpack_from("<Q", data, offset)[0]
+            if steam_min <= val <= steam_max:
+                found_steam_ids.add(val)
+
+        # Detect string SteamIDs in data
+        str_matches = re.findall(rb'7656119\d{10}', data)
+        for m in str_matches:
+            try:
+                found_steam_ids.add(int(m.decode()))
+            except:
+                pass
+
+        # 1. Target is Xbox: Replace SteamIDs with target Xbox XUID
+        if target_platform == "xbox":
+            target_xuid = None
+            if target_meta and target_meta.get("wgs_user_dir"):
+                dir_name = os.path.basename(target_meta["wgs_user_dir"])
+                if "_" in dir_name:
+                    target_xuid = dir_name.split("_")[0]
+            if not target_xuid and sys_ids["xbox_xuids"]:
+                target_xuid = sys_ids["xbox_xuids"][0]["hex"]
+
+            if target_xuid and found_steam_ids:
+                try:
+                    xuid_int = int(target_xuid, 16)
+                    target_bin = struct.pack("<Q", xuid_int)
+                    target_str = str(xuid_int).encode('ascii')
+
+                    for sid in found_steam_ids:
+                        sid_bin = struct.pack("<Q", sid)
+                        if sid_bin in data:
+                            c = data.count(sid_bin)
+                            data = data.replace(sid_bin, target_bin)
+                            replacements.append(f"Auto-Parche: SteamID64 {sid} -> Xbox XUID {target_xuid} ({c} ocurrencias binarias)")
+
+                        sid_str = str(sid).encode('ascii')
+                        if sid_str in data:
+                            c = data.count(sid_str)
+                            data = data.replace(sid_str, target_str)
+                            replacements.append(f"Auto-Parche: SteamID64 texto {sid} -> Xbox XUID {target_xuid} ({c} ocurrencias)")
+                except Exception as e:
+                    pass
+
+        # 2. Target is Steam: Replace other IDs / previous SteamIDs with local SteamID64
+        elif target_platform == "steam":
+            target_steam64 = None
+            if sys_ids["steam_ids"]:
+                target_steam64 = int(sys_ids["steam_ids"][0]["steam64"])
+
+            if target_steam64:
+                target_bin = struct.pack("<Q", target_steam64)
+                target_str = str(target_steam64).encode('ascii')
+
+                for sid in found_steam_ids:
+                    if sid != target_steam64:
+                        sid_bin = struct.pack("<Q", sid)
+                        if sid_bin in data:
+                            c = data.count(sid_bin)
+                            data = data.replace(sid_bin, target_bin)
+                            replacements.append(f"Auto-Parche: SteamID64 previo {sid} -> Tu SteamID64 {target_steam64} ({c} ocurrencias)")
+
+                        sid_str = str(sid).encode('ascii')
+                        if sid_str in data:
+                            c = data.count(sid_str)
+                            data = data.replace(sid_str, target_str)
+                            replacements.append(f"Auto-Parche: SteamID64 texto {sid} -> Tu SteamID64 {target_steam64} ({c} ocurrencias)")
+
+        if replacements:
+            # Write to a patched temp file
+            temp_dir = os.path.expandvars(r"%LOCALAPPDATA%\Temp\XboxSaveVault")
+            os.makedirs(temp_dir, exist_ok=True)
+            patched_file = os.path.join(temp_dir, f"patched_{os.path.basename(input_file_path)}")
+            with open(patched_file, "wb") as f:
+                f.write(data)
+            return patched_file, replacements
+
+        return input_file_path, replacements
+
 
 class CompatibilityChecker:
     """
@@ -349,7 +479,7 @@ class CompatibilityChecker:
                 "source_version": f"{source_platform.upper()} {src_ver}",
                 "target_version": f"{target_platform.upper()} {tgt_ver}",
                 "title": "ℹ️ Pre-Verificación de Versiones",
-                "message": f"Versión Origen ({source_platform.upper()}: {src_ver}) ➔ Versión Destino ({target_platform.upper()}: {tgt_ver}).",
+                "message": f"Versión Origen ({source_platform.upper()}: {src_ver}) -> Versión Destino ({target_platform.upper()}: {tgt_ver}).",
                 "recommendation": "Comprueba que ambas plataformas tengan el juego en su versión más reciente."
             }
 
@@ -380,6 +510,13 @@ class CrossPlatformBridge:
         if not os.path.exists(source_file_path):
             raise FileNotFoundError(f"Source file {source_file_path} not found")
 
+        # ⚡ Automatically patch embedded user account IDs (SteamID64 ⇄ Xbox XUID)
+        effective_file_path, patch_log = AutoIDPatcher.auto_patch_save_for_platform(
+            source_file_path, target_platform, target_game_meta
+        )
+
+        patch_msg = f" | {len(patch_log)} IDs auto-parcheados" if patch_log else ""
+
         # 1. Transfer to Xbox (WGS and Native LocalAppData paths)
         if target_platform.lower() == "xbox":
             user_wgs_dir = target_game_meta.get("wgs_user_dir")
@@ -388,15 +525,14 @@ class CrossPlatformBridge:
             
             res = {}
             if user_wgs_dir:
-                res = WGSEngine.inject_raw_save_to_slot(user_wgs_dir, slot_name, source_file_path, pkg_name=pkg_name)
+                res = WGSEngine.inject_raw_save_to_slot(user_wgs_dir, slot_name, effective_file_path, pkg_name=pkg_name)
 
             # Also sync to native LocalAppData path if applicable (e.g. Dead Cells in %LOCALAPPDATA%\MotionTwin\DeadCells)
             if pkg_name and ("deadcells" in pkg_name.lower() or "motiontwin" in pkg_name.lower()):
                 dc_local_dir = os.path.expandvars(r"%LOCALAPPDATA%\MotionTwin\DeadCells")
                 os.makedirs(dc_local_dir, exist_ok=True)
                 dest_file = os.path.join(dc_local_dir, slot_name)
-                shutil.copy2(source_file_path, dest_file)
-                # Also copy dc_options.json if present alongside source
+                shutil.copy2(effective_file_path, dest_file)
                 src_dir = os.path.dirname(source_file_path)
                 src_opt = os.path.join(src_dir, "dc_options.json")
                 if os.path.exists(src_opt):
@@ -404,8 +540,9 @@ class CrossPlatformBridge:
 
             return {
                 "success": True,
-                "message": f"Partida transferida exitosamente a Xbox en ranura '{slot_name}' (WGS + LocalAppData)",
-                "details": res
+                "message": f"Partida transferida exitosamente a Xbox en ranura '{slot_name}'{patch_msg}",
+                "details": res,
+                "auto_patches": patch_log
             }
 
         # 2. Transfer to Steam
@@ -423,12 +560,13 @@ class CrossPlatformBridge:
                 ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 shutil.copy2(dest_file, f"{dest_file}.bak_{ts}")
 
-            shutil.copy2(source_file_path, dest_file)
+            shutil.copy2(effective_file_path, dest_file)
             return {
                 "success": True,
-                "message": f"Partida transferida exitosamente a Steam en: {dest_file}",
+                "message": f"Partida transferida exitosamente a Steam en: {dest_file}{patch_msg}",
                 "dest_file": dest_file,
-                "size": os.path.getsize(dest_file)
+                "size": os.path.getsize(dest_file),
+                "auto_patches": patch_log
             }
 
         # 3. Transfer to Epic / Local Folder
@@ -445,33 +583,13 @@ class CrossPlatformBridge:
                 ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 shutil.copy2(dest_file, f"{dest_file}.bak_{ts}")
 
-            shutil.copy2(source_file_path, dest_file)
+            shutil.copy2(effective_file_path, dest_file)
             return {
                 "success": True,
-                "message": f"Partida transferida a {target_platform}: {dest_file}",
+                "message": f"Partida transferida a {target_platform}: {dest_file}{patch_msg}",
                 "dest_file": dest_file,
-                "size": os.path.getsize(dest_file)
+                "size": os.path.getsize(dest_file),
+                "auto_patches": patch_log
             }
         else:
             raise ValueError(f"Unknown target platform: {target_platform}")
-
-        pkg_name = parsed["pkg_name"].lower()
-
-        # 1. Beast of Reincarnation / Project Aibou
-        if "projectaibou" in pkg_name or "beast" in pkg_name:
-            # If injected normal slot (0 or 1), sync backup slot if available
-            target_meta_slots = []
-            if "normal_0" in injected_slot_name.lower():
-                target_meta_slots.append("borSaveDataMetabup0")
-            elif "normal_1" in injected_slot_name.lower():
-                target_meta_slots.append("borSaveDataMetabup1")
-
-            for ms in target_meta_slots:
-                # Find if container exists
-                for c in parsed["containers"]:
-                    if c["name"].lower() == ms.lower():
-                        # Read existing meta or update timestamp
-                        sync_results.append(f"Auto-Sincronizado backup slot: {ms}")
-                        break
-
-        return sync_results

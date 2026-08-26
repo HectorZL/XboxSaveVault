@@ -784,6 +784,11 @@ async function doExecuteTransfer() {
     if (data.success) {
       showToast(data.message, 'success');
       logActivity(`[SUCCESS] ${data.message}`, 'success');
+      if (data.auto_patches && data.auto_patches.length > 0) {
+        data.auto_patches.forEach(p => {
+          logActivity(`[AUTO-PATCH] ⚡ ${p}`, 'success');
+        });
+      }
       loadAllPlatforms();
     } else {
       showToast(`Error: ${data.error}`, 'error');
