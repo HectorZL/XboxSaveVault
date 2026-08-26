@@ -13,10 +13,12 @@ let defaultBackupDir = '';
 const gamesGrid = document.getElementById('gamesGrid');
 const steamGrid = document.getElementById('steamGrid');
 const epicGrid = document.getElementById('epicGrid');
+const localGrid = document.getElementById('localGrid');
 
 const gameSearch = document.getElementById('gameSearch');
 const steamSearch = document.getElementById('steamSearch');
 const epicSearch = document.getElementById('epicSearch');
+const localSearch = document.getElementById('localSearch');
 
 const statGamesCount = document.getElementById('statGamesCount');
 const statSavesCount = document.getElementById('statSavesCount');
@@ -26,6 +28,7 @@ const consoleLogs = document.getElementById('consoleLogs');
 const countXbox = document.getElementById('countXbox');
 const countSteam = document.getElementById('countSteam');
 const countEpic = document.getElementById('countEpic');
+const countLocal = document.getElementById('countLocal');
 
 // Init
 document.addEventListener('DOMContentLoaded', () => {
@@ -67,6 +70,39 @@ function setupEventListeners() {
   document.getElementById('btnOpenToolsModal').addEventListener('click', () => {
     openToolsModal();
   });
+
+  // Real-time Search Filters
+  if (gameSearch) {
+    gameSearch.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const filtered = (allData.xbox || []).filter(g => g.name.toLowerCase().includes(q) || (g.publisher && g.publisher.toLowerCase().includes(q)));
+      renderGames(filtered);
+    });
+  }
+
+  if (steamSearch) {
+    steamSearch.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const filtered = (allData.steam || []).filter(g => g.name.toLowerCase().includes(q) || String(g.appid).includes(q));
+      renderSteamGames(filtered);
+    });
+  }
+
+  if (epicSearch) {
+    epicSearch.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const filtered = (allData.epic || []).filter(g => g.name.toLowerCase().includes(q));
+      renderEpicGames(filtered);
+    });
+  }
+
+  if (localSearch) {
+    localSearch.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      const filtered = (allData.local_saves || []).filter(g => g.name.toLowerCase().includes(q) || (g.developer && g.developer.toLowerCase().includes(q)));
+      renderLocalGames(filtered);
+    });
+  }
 
   // Tools Modal File Browsers & Actions
   document.getElementById('btnBrowseInspectFile').addEventListener('click', async () => {
@@ -320,10 +356,11 @@ async function loadAllPlatforms() {
       updateStats();
       renderGames(allData.xbox);
       renderSteamGames(allData.steam);
-      renderEpicGames(allData.epic, allData.local_saves);
+      renderEpicGames(allData.epic);
+      renderLocalGames(allData.local_saves);
       updateBridgeDropdowns();
 
-      logActivity(`[SCAN] Escaneo completo: ${allData.counts.xbox} Xbox, ${allData.counts.steam} Steam, ${allData.counts.epic + allData.counts.local_saves} Epic/Locales.`, 'success');
+      logActivity(`[SCAN] Escaneo completo: ${allData.counts.xbox} Xbox, ${allData.counts.steam} Steam, ${allData.counts.epic} Epic, ${allData.counts.local_saves} Locales.`, 'success');
     } else {
       showToast('Error al cargar datos de plataformas', 'error');
     }
@@ -333,12 +370,16 @@ async function loadAllPlatforms() {
 }
 
 function updateStats() {
-  const totalGames = (allData.xbox ? allData.xbox.length : 0) + (allData.steam ? allData.steam.length : 0) + (allData.epic ? allData.epic.length : 0);
+  const totalGames = (allData.xbox ? allData.xbox.length : 0) + 
+                     (allData.steam ? allData.steam.length : 0) + 
+                     (allData.epic ? allData.epic.length : 0) +
+                     (allData.local_saves ? allData.local_saves.length : 0);
   statGamesCount.textContent = totalGames;
 
   let totalSaves = 0;
   if (allData.xbox) totalSaves += allData.xbox.filter(g => g.has_saves).length;
   if (allData.steam) totalSaves += allData.steam.filter(g => g.has_saves).length;
+  if (allData.epic) totalSaves += allData.epic.length;
   if (allData.local_saves) totalSaves += allData.local_saves.length;
   statSavesCount.textContent = totalSaves;
 
@@ -352,7 +393,8 @@ function updateStats() {
 
   if (countXbox) countXbox.textContent = allData.xbox ? allData.xbox.length : 0;
   if (countSteam) countSteam.textContent = allData.steam ? allData.steam.length : 0;
-  if (countEpic) countEpic.textContent = (allData.epic ? allData.epic.length : 0) + (allData.local_saves ? allData.local_saves.length : 0);
+  if (countEpic) countEpic.textContent = allData.epic ? allData.epic.length : 0;
+  if (countLocal) countLocal.textContent = allData.local_saves ? allData.local_saves.length : 0;
 }
 
 // Helper to render Full-Width Hero Cover Banner
@@ -475,29 +517,81 @@ function renderSteamGames(games) {
   resolveMissingCovers();
 }
 
-// Render Epic & Local Games
-function renderEpicGames(epicList, localList) {
+// Render Epic Games Launcher
+function renderEpicGames(games) {
   if (!epicGrid) return;
   epicGrid.innerHTML = '';
-  const combined = [...(epicList || []), ...(localList || [])];
 
-  if (combined.length === 0) {
-    epicGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-secondary);">No se encontraron partidas locales de Epic / PC.</div>';
+  if (!games || games.length === 0) {
+    epicGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-secondary);">No se encontraron juegos instalados de Epic Games Launcher.</div>';
     return;
   }
 
-  combined.forEach(g => {
+  games.forEach(g => {
+    const card = document.createElement('div');
+    card.className = 'game-card';
+
+    const bannerHtml = getGameCoverBannerHtml(g, '⚫', 'epic', '⚫ Epic Games');
+
+    card.innerHTML = `
+      ${bannerHtml}
+      <div class="game-card-body">
+        <div>
+          <div class="game-title" title="${g.name}">${g.name}</div>
+          <div class="game-publisher">Epic Games Launcher &bull; ${g.install_path ? 'Instalado' : 'Biblioteca'}</div>
+        </div>
+
+        <div class="game-save-info">
+          <div class="save-info-row">
+            <span class="save-info-label">Plataforma:</span>
+            <span class="save-info-value" style="color: #d8b4fe;">Epic Games Store</span>
+          </div>
+          ${g.install_path ? `
+          <div class="save-info-row">
+            <span class="save-info-label">Instalación:</span>
+            <span class="save-info-value" title="${g.install_path}">${g.install_path}</span>
+          </div>` : ''}
+        </div>
+
+        <div class="game-actions">
+          ${g.install_path ? `
+            <button class="btn btn-secondary btn-sm" style="grid-column: span 2;" onclick="openFolder('${g.install_path.replace(/\\/g, '\\\\')}')">
+              📁 Abrir Carpeta de Instalación
+            </button>
+          ` : `
+            <button class="btn btn-secondary btn-sm" style="grid-column: span 2;" disabled>
+              Sin ruta de instalación
+            </button>
+          `}
+        </div>
+      </div>
+    `;
+    epicGrid.appendChild(card);
+  });
+  resolveMissingCovers();
+}
+
+// Render PC Local Saves (AppData LocalLow / Saved Games)
+function renderLocalGames(games) {
+  if (!localGrid) return;
+  localGrid.innerHTML = '';
+
+  if (!games || games.length === 0) {
+    localGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-secondary);">No se encontraron partidas locales en AppData o Saved Games.</div>';
+    return;
+  }
+
+  games.forEach(g => {
     const card = document.createElement('div');
     card.className = 'game-card';
 
     const fileCount = g.file_count || (g.files ? g.files.length : 0);
     const sizeText = g.total_size_kb ? `${g.total_size_kb} KB` : '';
     const filesList = g.files ? g.files.map(f => f.name).slice(0, 3).join(', ') : 'N/A';
-    const isEpic = g.platform === 'Epic Games';
-    const pillClass = isEpic ? 'epic' : 'local';
-    const pillText = isEpic ? '⚫ Epic Games' : (g.platform === 'AppData LocalLow' ? '📁 LocalLow' : '💾 Saved Games');
-    const badgeEmoji = isEpic ? '⚫' : (g.platform === 'AppData LocalLow' ? '📁' : '💾');
-    const bannerHtml = getGameCoverBannerHtml(g, badgeEmoji, pillClass, pillText);
+    const isLocalLow = g.platform === 'AppData LocalLow';
+    const pillText = isLocalLow ? '📁 LocalLow' : '💾 Saved Games';
+    const badgeEmoji = isLocalLow ? '📁' : '💾';
+    const bannerHtml = getGameCoverBannerHtml(g, badgeEmoji, 'local', pillText);
 
     card.innerHTML = `
       ${bannerHtml}
@@ -539,7 +633,7 @@ function renderEpicGames(epicList, localList) {
         </div>
       </div>
     `;
-    epicGrid.appendChild(card);
+    localGrid.appendChild(card);
   });
   resolveMissingCovers();
 }

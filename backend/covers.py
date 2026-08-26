@@ -76,7 +76,9 @@ KNOWN_GAME_MAP = {
     "slaythespire": "646570",
     "no mans sky": "275850",
     "sea of thieves": "1172620",
-    "beast of reincarnation": "3154860"
+    "beast of reincarnation": "3154860",
+    "graveyard keeper": "599140",
+    "graveyardkeeper": "599140"
 }
 
 class GameCoverService:
@@ -118,7 +120,7 @@ class GameCoverService:
         1. If app_id provided -> direct Steam CDN header
         2. Check memory & file cache
         3. Check known alias dictionary
-        4. Query Steam Store Search API
+        4. Query Steam Store Search API (with exact match prioritization)
         """
         if app_id and str(app_id).isdigit():
             return f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/header.jpg"
@@ -133,7 +135,7 @@ class GameCoverService:
             return None
 
         # Check Cache
-        if norm_key in cls._cache:
+        if norm_key in cls._cache and cls._cache[norm_key]:
             return cls._cache[norm_key]
 
         # Check Known Aliases
@@ -160,11 +162,27 @@ class GameCoverService:
             
             with urllib.request.urlopen(req, timeout=2.5) as res:
                 data = json.loads(res.read().decode("utf-8", errors="ignore"))
-                if data.get("items") and len(data["items"]) > 0:
-                    best_item = data["items"][0]
-                    found_appid = best_item.get("id")
-                    if found_appid:
-                        cover_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{found_appid}/header.jpg"
+                items = data.get("items", [])
+                if items:
+                    st_lower = search_term.lower().strip()
+                    target_id = None
+                    # 1. Exact match prioritization
+                    for it in items:
+                        if it.get("name", "").lower().strip() == st_lower:
+                            target_id = it.get("id")
+                            break
+                    # 2. Prefix match
+                    if not target_id:
+                        for it in items:
+                            if it.get("name", "").lower().startswith(st_lower):
+                                target_id = it.get("id")
+                                break
+                    # 3. Fallback to first item
+                    if not target_id:
+                        target_id = items[0].get("id")
+
+                    if target_id:
+                        cover_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{target_id}/header.jpg"
                         cls._cache[norm_key] = cover_url
                         cls._save_cache()
                         return cover_url

@@ -93,7 +93,10 @@
         <span class="tab-icon">🔵</span> Steam Library & Saves <span class="tab-count" id="countSteam">0</span>
       </button>
       <button class="tab-btn" data-tab="epic">
-        <span class="tab-icon">⚫</span> Epic & PC Local Saves <span class="tab-count" id="countEpic">0</span>
+        <span class="tab-icon">⚫</span> Epic Games Launcher <span class="tab-count" id="countEpic">0</span>
+      </button>
+      <button class="tab-btn" data-tab="local">
+        <span class="tab-icon">💾</span> Partidas Locales de PC <span class="tab-count" id="countLocal">0</span>
       </button>
       <button class="tab-btn tab-btn-bridge" data-tab="bridge">
         <span class="tab-icon">🔄</span> Cross-Save Sync Bridge
@@ -130,18 +133,32 @@
         <div id="steamGrid" class="games-grid"></div>
       </div>
 
-      <!-- Epic & Local PC View -->
+      <!-- Epic Games View -->
       <div id="viewEpic" class="platform-view">
         <div class="section-header">
           <div class="section-title-wrap">
-            <h2>Epic Games Launcher & Partidas Locales de PC</h2>
-            <p class="section-desc">Partidas encontradas en <code>AppData\LocalLow</code> y <code>%USERPROFILE%\Saved Games</code>.</p>
+            <h2>Epic Games Launcher</h2>
+            <p class="section-desc">Juegos detectados directamente desde el lanzador de Epic Games.</p>
           </div>
           <div class="search-filter-wrap">
-            <input type="text" id="epicSearch" class="search-input" placeholder="Buscar en Epic / Partidas Locales...">
+            <input type="text" id="epicSearch" class="search-input" placeholder="Buscar en Epic Games Launcher...">
           </div>
         </div>
         <div id="epicGrid" class="games-grid"></div>
+      </div>
+
+      <!-- PC Local Saves View -->
+      <div id="viewLocal" class="platform-view">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <h2>Partidas Locales de PC (AppData / Saved Games)</h2>
+            <p class="section-desc">Partidas encontradas en <code>AppData\LocalLow</code> y <code>%USERPROFILE%\Saved Games</code> listas para transferir.</p>
+          </div>
+          <div class="search-filter-wrap">
+            <input type="text" id="localSearch" class="search-input" placeholder="Buscar en partidas locales (ej. Kingdom Come, Astral Ascent)...">
+          </div>
+        </div>
+        <div id="localGrid" class="games-grid"></div>
       </div>
 
       <!-- Cross-Save Sync Bridge View -->
