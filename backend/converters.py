@@ -233,16 +233,31 @@ class CrossPlatformBridge:
         if not os.path.exists(source_file_path):
             raise FileNotFoundError(f"Source file {source_file_path} not found")
 
-        # 1. Transfer to Xbox WGS
+        # 1. Transfer to Xbox (WGS and Native LocalAppData paths)
         if target_platform.lower() == "xbox":
             user_wgs_dir = target_game_meta.get("wgs_user_dir")
             pkg_name = target_game_meta.get("package_id")
             slot_name = target_slot_name or os.path.basename(source_file_path)
             
-            res = WGSEngine.inject_raw_save_to_slot(user_wgs_dir, slot_name, source_file_path, pkg_name=pkg_name)
+            res = {}
+            if user_wgs_dir:
+                res = WGSEngine.inject_raw_save_to_slot(user_wgs_dir, slot_name, source_file_path, pkg_name=pkg_name)
+
+            # Also sync to native LocalAppData path if applicable (e.g. Dead Cells in %LOCALAPPDATA%\MotionTwin\DeadCells)
+            if pkg_name and ("deadcells" in pkg_name.lower() or "motiontwin" in pkg_name.lower()):
+                dc_local_dir = os.path.expandvars(r"%LOCALAPPDATA%\MotionTwin\DeadCells")
+                os.makedirs(dc_local_dir, exist_ok=True)
+                dest_file = os.path.join(dc_local_dir, slot_name)
+                shutil.copy2(source_file_path, dest_file)
+                # Also copy dc_options.json if present alongside source
+                src_dir = os.path.dirname(source_file_path)
+                src_opt = os.path.join(src_dir, "dc_options.json")
+                if os.path.exists(src_opt):
+                    shutil.copy2(src_opt, os.path.join(dc_local_dir, "dc_options.json"))
+
             return {
                 "success": True,
-                "message": f"Partida transferida exitosamente a Xbox en ranura '{slot_name}'",
+                "message": f"Partida transferida exitosamente a Xbox en ranura '{slot_name}' (WGS + LocalAppData)",
                 "details": res
             }
 

@@ -56,9 +56,28 @@ class XboxScanner:
                             }]
                         break
 
+            # Check if game has a native engine save location (e.g. Dead Cells in %LOCALAPPDATA%\MotionTwin\DeadCells)
+            native_save_path = None
+            native_files = []
+            if clean_display_name == "Dead Cells" or "deadcells" in (pkg_name or "").lower():
+                dc_local = os.path.expandvars(r"%LOCALAPPDATA%\MotionTwin\DeadCells")
+                if os.path.exists(dc_local):
+                    native_save_path = dc_local
+                    for f in os.listdir(dc_local):
+                        fp = os.path.join(dc_local, f)
+                        if os.path.isfile(fp):
+                            native_files.append({
+                                "name": f,
+                                "path": fp,
+                                "size": os.path.getsize(fp),
+                                "size_kb": round(os.path.getsize(fp) / 1024, 2),
+                                "modified": datetime.datetime.fromtimestamp(os.path.getmtime(fp)).strftime("%Y-%m-%d %H:%M:%S")
+                            })
+
             game_entry = {
                 "id": ig.get("id") or ig.get("name"),
-                "name": ig.get("display_name") or ig.get("name"),
+                "name": clean_display_name,
+                "display_name": clean_display_name,
                 "publisher": ig.get("publisher", "Unknown Publisher"),
                 "version": ig.get("version", "1.0"),
                 "title_id": ig.get("title_id"),
@@ -67,10 +86,19 @@ class XboxScanner:
                 "logo_path": ig.get("logo_path"),
                 "logo_base64": ig.get("logo_base64"),
                 "is_installed": True,
-                "has_saves": matched_save is not None or (wgs_user_dirs and len(wgs_user_dirs[0]["containers"]) > 0),
-                "save_details": matched_save.get("details") if matched_save else None,
+                "has_saves": matched_save is not None or (wgs_user_dirs and len(wgs_user_dirs[0]["containers"]) > 0) or len(native_files) > 0,
+                "save_details": matched_save.get("details") if matched_save else {
+                    "container_count": len(native_files),
+                    "file_count": len(native_files),
+                    "total_size_bytes": sum(f["size"] for f in native_files),
+                    "total_size_kb": round(sum(f["size"] for f in native_files) / 1024, 2),
+                    "last_saved": max(f["modified"] for f in native_files) if native_files else "N/A",
+                    "containers": [{"name": f["name"], "size": f["size"], "modified": f["modified"], "files": [{"filename": f["name"], "blob_path": f["path"], "blob_guid": f["name"], "size": f["size"]}]} for f in native_files]
+                } if native_files else None,
                 "wgs_root": wgs_root,
-                "wgs_user_dirs": wgs_user_dirs
+                "wgs_user_dirs": wgs_user_dirs,
+                "native_save_path": native_save_path,
+                "native_files": native_files
             }
             merged_games.append(game_entry)
 
