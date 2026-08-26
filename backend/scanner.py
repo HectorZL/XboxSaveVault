@@ -443,13 +443,16 @@ class XboxScanner:
                             
                             matched_save = app_saves_map.get(app_id)
 
+                            # Check for external and custom save directories (e.g. Sekiro in %APPDATA%\Sekiro, Elden Ring, etc.)
+                            ext_path, ext_files = cls.find_game_external_saves(app_id, game_name, full_install)
+
                             # Check for local game save folder (e.g. Dead Cells/save)
                             local_save_dir = os.path.join(full_install, "save")
-                            extra_files = []
+                            extra_files = list(ext_files)
                             if os.path.exists(local_save_dir):
                                 for f in os.listdir(local_save_dir):
                                     fp = os.path.join(local_save_dir, f)
-                                    if os.path.isfile(fp):
+                                    if os.path.isfile(fp) and not any(ef["path"] == fp for ef in extra_files):
                                         extra_files.append({
                                             "name": f,
                                             "path": fp,
@@ -458,16 +461,28 @@ class XboxScanner:
                                             "modified": datetime.datetime.fromtimestamp(os.path.getmtime(fp)).strftime("%Y-%m-%d %H:%M:%S")
                                         })
 
+                            active_save_details = matched_save
+                            if not active_save_details and extra_files:
+                                active_save_details = {
+                                    "steam3_id": "local",
+                                    "appid": app_id,
+                                    "remote_path": ext_path or local_save_dir,
+                                    "files": extra_files,
+                                    "total_size": sum(f["size"] for f in extra_files),
+                                    "total_size_kb": round(sum(f["size"] for f in extra_files) / 1024, 2),
+                                    "last_modified": max(f["modified"] for f in extra_files) if extra_files else "N/A"
+                                }
+
                             installed_games.append({
                                 "id": f"steam_{app_id}",
                                 "appid": app_id,
                                 "name": game_name,
                                 "platform": "Steam",
                                 "install_path": full_install if os.path.exists(full_install) else None,
-                                "has_saves": matched_save is not None or len(extra_files) > 0,
-                                "save_details": matched_save,
+                                "has_saves": active_save_details is not None,
+                                "save_details": active_save_details,
                                 "extra_save_files": extra_files,
-                                "remote_save_path": matched_save["remote_path"] if matched_save else (local_save_dir if extra_files else None)
+                                "remote_save_path": active_save_details["remote_path"] if active_save_details else None
                             })
                     except:
                         pass
@@ -488,6 +503,66 @@ class XboxScanner:
                 })
 
         return installed_games
+
+    @classmethod
+    def find_game_external_saves(cls, app_id, game_name, install_dir=None):
+        """Finds saves in standard external locations (AppData, Roaming, LocalLow, Saved Games, Documents)."""
+        import re
+        import datetime
+
+        known_paths = {
+            "814380": [r"%APPDATA%\Sekiro"],
+            "1245620": [r"%APPDATA%\EldenRing"],
+            "374320": [r"%APPDATA%\DarkSoulsIII"],
+            "335300": [r"%APPDATA%\DarkSoulsII"],
+            "504230": [r"%LOCALAPPDATA%\Celeste\Saves"],
+            "367520": [r"%USERPROFILE%\AppData\LocalLow\Team Cherry\Hollow Knight"],
+            "1868140": [r"%USERPROFILE%\AppData\LocalLow\Mintrocket\DAVE THE DIVER\SteamSaves", r"%USERPROFILE%\AppData\LocalLow\Mintrocket\DAVE THE DIVER\Saved"],
+            "588650": [r"%LOCALAPPDATA%\MotionTwin\DeadCells"]
+        }
+
+        candidate_paths = []
+        if app_id in known_paths:
+            candidate_paths.extend([os.path.expandvars(p) for p in known_paths[app_id]])
+
+        clean_name = re.sub(r'[^\w\s]', '', game_name).replace(" ", "")
+        for base in [os.path.expandvars(r"%APPDATA%"), os.path.expandvars(r"%USERPROFILE%\Saved Games"), os.path.expandvars(r"%USERPROFILE%\Documents\My Games")]:
+            if os.path.exists(base):
+                for sub in [game_name, clean_name, game_name.split(":")[0].strip()]:
+                    p = os.path.join(base, sub)
+                    if os.path.exists(p) and p not in candidate_paths:
+                        candidate_paths.append(p)
+
+        if install_dir and os.path.exists(install_dir):
+            for s in ["save", "Save", "saves", "Saves"]:
+                sp = os.path.join(install_dir, s)
+                if os.path.exists(sp) and sp not in candidate_paths:
+                    candidate_paths.append(sp)
+
+        collected_files = []
+        best_path = None
+        for cp in candidate_paths:
+            if os.path.exists(cp):
+                for root, dirs, f_names in os.walk(cp):
+                    for fn in f_names:
+                        if fn.endswith((".sl2", ".sav", ".dat", ".bin", ".vdf", ".xml", ".json", ".db")) and not fn.endswith((".log", ".tmp")):
+                            full_fn = os.path.join(root, fn)
+                            try:
+                                sz = os.path.getsize(full_fn)
+                                if sz > 0:
+                                    collected_files.append({
+                                        "name": fn,
+                                        "path": full_fn,
+                                        "size": sz,
+                                        "size_kb": round(sz / 1024, 2),
+                                        "modified": datetime.datetime.fromtimestamp(os.path.getmtime(full_fn)).strftime("%Y-%m-%d %H:%M:%S")
+                                    })
+                                    if not best_path:
+                                        best_path = root
+                            except:
+                                pass
+
+        return best_path, collected_files
 
     @classmethod
     def scan_epic_and_local_data(cls):
