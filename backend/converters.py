@@ -364,7 +364,6 @@ class CompatibilityChecker:
         platform = (platform or "").lower()
 
         if platform == "xbox":
-            # Check version in game_meta or MicrosoftGame.config
             ver = game_meta.get("version")
             inst = game_meta.get("install_path")
             if inst and os.path.exists(inst):
@@ -378,10 +377,9 @@ class CompatibilityChecker:
                         if m: ver = f"v{m.group(1)}"
                     except:
                         pass
-            return ver or "v1.0 (Xbox)"
+            return ver or "v1.0"
 
         elif platform == "steam":
-            # Check Steam appmanifest or install dir
             inst = game_meta.get("install_path")
             app_id = game_meta.get("appid")
             build_id = None
@@ -396,11 +394,11 @@ class CompatibilityChecker:
                     except:
                         pass
             if build_id:
-                return f"Steam Build #{build_id}"
-            return "Steam (Última versión)"
+                return f"Build #{build_id}"
+            return "Última versión"
 
         elif platform in ["epic", "local"]:
-            return "PC Local / Epic"
+            return "PC Local"
 
         return "v1.0"
 
@@ -416,7 +414,6 @@ class CompatibilityChecker:
 
             # Dead Cells magic
             if header.startswith(b"\xde\xad\xce\x11"):
-                # Find date / version integer
                 import re
                 import struct
                 m = re.search(rb'202\d-\d\d-\d\d', header)
@@ -430,14 +427,14 @@ class CompatibilityChecker:
                     "format": "Dead Cells HXS",
                     "save_version_int": ver_int,
                     "date": date_str,
-                    "summary": f"Dead Cells Ver {ver_int or 'Desconocida'} ({date_str or 'Sin fecha'})"
+                    "summary": f"Ver {ver_int or 'N/A'} ({date_str or 'Sin fecha'})"
                 }
 
             # Unreal Engine GVAS
             if header.startswith(b"GVAS"):
                 return {
                     "format": "Unreal Engine GVAS",
-                    "summary": "Unreal Engine Save Data (Compatible)"
+                    "summary": "Unreal Engine Save Data"
                 }
         except:
             pass
@@ -454,45 +451,48 @@ class CompatibilityChecker:
         src_name = source_game_meta.get("name", "Juego de Origen")
         tgt_name = target_game_meta.get("name", "Juego de Destino")
 
+        src_plat_label = "Steam" if source_platform.lower() == "steam" else ("Xbox Game Pass" if source_platform.lower() == "xbox" else "Epic / PC")
+        tgt_plat_label = "Xbox Game Pass" if target_platform.lower() == "xbox" else ("Steam" if target_platform.lower() == "steam" else "Epic / PC")
+
         # Specific known game checks (e.g., Dead Cells)
         if "dead cells" in src_name.lower() or "dead cells" in tgt_name.lower():
             if source_platform.lower() == "steam" and target_platform.lower() == "xbox":
                 return {
                     "has_mismatch": True,
                     "severity": "warning",
-                    "source_platform": source_platform.upper(),
-                    "target_platform": target_platform.upper(),
-                    "source_version": f"Steam Final ({save_info.get('summary') if save_info else src_ver})",
-                    "target_version": f"Xbox {tgt_ver} (Build 2023-10-31)",
-                    "title": "⚠️ Posible Desfase de Versiones Detectado",
-                    "message": f"La versión de Steam ({src_ver}) contiene actualizaciones más recientes que la versión de Xbox ({tgt_ver}). Si Xbox no está actualizada a la última versión, el juego puede requerir una actualización antes de cargar la partida.",
-                    "recommendation": "Verifica si hay actualizaciones en la Microsoft Store / App de Xbox antes de iniciar."
+                    "source_platform": src_plat_label,
+                    "target_platform": tgt_plat_label,
+                    "source_version": f"Steam ({src_ver})",
+                    "target_version": f"Xbox ({tgt_ver})",
+                    "title": "⚠️ Desfase de Versiones Detectado",
+                    "message": f"La versión de Steam ({src_ver}) contiene parches más recientes que la versión instalada en Xbox ({tgt_ver}).",
+                    "recommendation": "Verifica si hay actualizaciones en la Microsoft Store o la App de Xbox antes de jugar."
                 }
 
-        # Check for general version disparity
-        if src_ver != tgt_ver and src_ver != "Desconocida" and tgt_ver != "Desconocida" and not (source_platform == target_platform):
+        # Check for general version disparity across platforms
+        if src_ver != tgt_ver and src_ver != "Desconocida" and tgt_ver != "Desconocida" and not (source_platform.lower() == target_platform.lower()):
             return {
                 "has_mismatch": True,
-                "severity": "info",
-                "source_platform": source_platform.upper(),
-                "target_platform": target_platform.upper(),
-                "source_version": f"{source_platform.upper()} {src_ver}",
-                "target_version": f"{target_platform.upper()} {tgt_ver}",
-                "title": "ℹ️ Pre-Verificación de Versiones",
-                "message": f"Versión Origen ({source_platform.upper()}: {src_ver}) -> Versión Destino ({target_platform.upper()}: {tgt_ver}).",
-                "recommendation": "Comprueba que ambas plataformas tengan el juego en su versión más reciente."
+                "severity": "warning",
+                "source_platform": src_plat_label,
+                "target_platform": tgt_plat_label,
+                "source_version": f"{src_plat_label} ({src_ver})",
+                "target_version": f"{tgt_plat_label} ({tgt_ver})",
+                "title": "⚠️ Desfase de Versiones entre Plataformas",
+                "message": f"La versión en {src_plat_label} ({src_ver}) es diferente a la versión instalada en {tgt_plat_label} ({tgt_ver}).",
+                "recommendation": "Si el juego muestra un error de partida al iniciar, actualiza el juego en la plataforma de destino a su versión más reciente."
             }
 
         return {
             "has_mismatch": False,
             "severity": "success",
-            "source_platform": source_platform.upper(),
-            "target_platform": target_platform.upper(),
+            "source_platform": src_plat_label,
+            "target_platform": tgt_plat_label,
             "source_version": src_ver,
             "target_version": tgt_ver,
-            "title": "✅ Compatibilidad Verificada",
-            "message": "Ambas plataformas y la cabecera de la partida son compatibles.",
-            "recommendation": "Puedes transferir tu partida con total seguridad."
+            "title": "✅ Versiones Compatibles",
+            "message": "Ambas plataformas y la cabecera de la partida coinciden.",
+            "recommendation": "Puedes transferir tu partida directamente."
         }
 
 

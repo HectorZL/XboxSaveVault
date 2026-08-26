@@ -692,6 +692,11 @@ function renderPrecheckBanner(info) {
   rec.textContent = info.recommendation ? `💡 Recomendación: ${info.recommendation}` : '';
 }
 
+function closeCompatibilityModal() {
+  const modal = document.getElementById('compatibilityWarningModal');
+  if (modal) modal.classList.remove('active');
+}
+
 function showCompatibilityModal(info) {
   const modal = document.getElementById('compatibilityWarningModal');
   if (!modal) return;
@@ -712,13 +717,11 @@ function showCompatibilityModal(info) {
   modal.classList.add('active');
 }
 
-function closeCompatibilityModal() {
-  const modal = document.getElementById('compatibilityWarningModal');
-  if (modal) modal.classList.remove('active');
-}
-
 async function executeBridgeTransfer() {
+  const srcPlatform = document.getElementById('bridgeSourcePlatform').value;
+  const tgtPlatform = document.getElementById('bridgeTargetPlatform').value;
   const srcFilePath = document.getElementById('bridgeSourceFile').value;
+  const srcGameId = document.getElementById('bridgeSourceGame').value;
   const tgtGameId = document.getElementById('bridgeTargetGame').value;
 
   if (!srcFilePath) {
@@ -730,12 +733,40 @@ async function executeBridgeTransfer() {
     return;
   }
 
-  // Pre-verification check: if mismatch is detected, show warning modal
-  if (lastCompatibilityResult && lastCompatibilityResult.has_mismatch && lastCompatibilityResult.severity === 'warning') {
-    showCompatibilityModal(lastCompatibilityResult);
-    return;
+  let srcMeta = {};
+  if (srcPlatform === 'steam') srcMeta = (allData.steam || []).find(g => g.id === srcGameId) || {};
+  else if (srcPlatform === 'xbox') srcMeta = (allData.xbox || []).find(g => g.id === srcGameId) || {};
+  else if (srcPlatform === 'epic') srcMeta = [...(allData.local_saves || []), ...(allData.epic || [])].find(g => g.id === srcGameId) || {};
+
+  let tgtMeta = {};
+  if (tgtPlatform === 'xbox') tgtMeta = (allData.xbox || []).find(g => g.id === tgtGameId) || {};
+  else if (tgtPlatform === 'steam') tgtMeta = (allData.steam || []).find(g => g.id === tgtGameId) || {};
+  else if (tgtPlatform === 'epic') tgtMeta = [...(allData.local_saves || []), ...(allData.epic || [])].find(g => g.id === tgtGameId) || {};
+
+  // Check version compatibility on click
+  try {
+    const res = await fetch('/api/bridge/verify-compatibility', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_platform: srcPlatform,
+        target_platform: tgtPlatform,
+        source_file: srcFilePath,
+        source_meta: srcMeta,
+        target_meta: tgtMeta
+      })
+    });
+    const data = await res.json();
+    if (data.success && data.data && data.data.has_mismatch) {
+      // ⚠️ Versions are different -> show warning modal to user
+      showCompatibilityModal(data.data);
+      return;
+    }
+  } catch (e) {
+    console.error('Error verificando versiones:', e);
   }
 
+  // ✅ Versions match or no mismatch detected -> Transfer directly
   doExecuteTransfer();
 }
 
