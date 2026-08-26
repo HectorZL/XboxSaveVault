@@ -454,7 +454,7 @@ class CompatibilityChecker:
         src_plat_label = "Steam" if source_platform.lower() == "steam" else ("Xbox Game Pass" if source_platform.lower() == "xbox" else "Epic / PC")
         tgt_plat_label = "Xbox Game Pass" if target_platform.lower() == "xbox" else ("Steam" if target_platform.lower() == "steam" else "Epic / PC")
 
-        # Specific known game checks (e.g., Dead Cells)
+        # Specific known game checks with genuine format disparities (e.g., Dead Cells v461 vs v35)
         if "dead cells" in src_name.lower() or "dead cells" in tgt_name.lower():
             if source_platform.lower() == "steam" and target_platform.lower() == "xbox":
                 return {
@@ -469,29 +469,16 @@ class CompatibilityChecker:
                     "recommendation": "Verifica si hay actualizaciones en la Microsoft Store o la App de Xbox antes de jugar."
                 }
 
-        # Check for general version disparity across platforms
-        if src_ver != tgt_ver and src_ver != "Desconocida" and tgt_ver != "Desconocida" and not (source_platform.lower() == target_platform.lower()):
-            return {
-                "has_mismatch": True,
-                "severity": "warning",
-                "source_platform": src_plat_label,
-                "target_platform": tgt_plat_label,
-                "source_version": f"{src_plat_label} ({src_ver})",
-                "target_version": f"{tgt_plat_label} ({tgt_ver})",
-                "title": "⚠️ Desfase de Versiones entre Plataformas",
-                "message": f"La versión en {src_plat_label} ({src_ver}) es diferente a la versión instalada en {tgt_plat_label} ({tgt_ver}).",
-                "recommendation": "Si el juego muestra un error de partida al iniciar, actualiza el juego en la plataforma de destino a su versión más reciente."
-            }
-
+        # For standard games, Steam Build IDs and Xbox Package Versions are store-specific numbering schemes
         return {
             "has_mismatch": False,
             "severity": "success",
             "source_platform": src_plat_label,
             "target_platform": tgt_plat_label,
-            "source_version": src_ver,
-            "target_version": tgt_ver,
+            "source_version": f"{src_plat_label} ({src_ver})",
+            "target_version": f"{tgt_plat_label} ({tgt_ver})",
             "title": "✅ Versiones Compatibles",
-            "message": "Ambas plataformas y la cabecera de la partida coinciden.",
+            "message": f"Las versiones instaladas en {src_plat_label} y {tgt_plat_label} son compatibles para transferir.",
             "recommendation": "Puedes transferir tu partida directamente."
         }
 
