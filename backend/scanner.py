@@ -328,3 +328,249 @@ class XboxScanner:
                     })
 
         return results
+
+    @classmethod
+    def scan_steam_data(cls):
+        """Scans Steam installations, installed games (appmanifest), and remote save files in userdata."""
+        import re
+        import datetime
+        steam_roots = [
+            r"C:\Program Files (x86)\Steam",
+            r"C:\Steam",
+            r"D:\Steam",
+            r"D:\SteamLibrary",
+            r"E:\SteamLibrary"
+        ]
+        installed_games = []
+        app_saves_map = {}
+
+        for sr in steam_roots:
+            if not os.path.exists(sr): continue
+            
+            # 1. Scan userdata saves
+            ud = os.path.join(sr, "userdata")
+            if os.path.exists(ud):
+                for u in os.listdir(ud):
+                    if u.isdigit() and u != "0":
+                        u_dir = os.path.join(ud, u)
+                        for app in os.listdir(u_dir):
+                            if app.isdigit() and app not in ["7", "760"]:
+                                remote = os.path.join(u_dir, app, "remote")
+                                files = []
+                                if os.path.exists(remote):
+                                    for r_root, _, r_files in os.walk(remote):
+                                        for rf in r_files:
+                                            full_rf = os.path.join(r_root, rf)
+                                            files.append({
+                                                "name": rf,
+                                                "path": full_rf,
+                                                "size": os.path.getsize(full_rf),
+                                                "size_kb": round(os.path.getsize(full_rf) / 1024, 2),
+                                                "modified": datetime.datetime.fromtimestamp(os.path.getmtime(full_rf)).strftime("%Y-%m-%d %H:%M:%S")
+                                            })
+                                if files:
+                                    app_saves_map[app] = {
+                                        "steam3_id": u,
+                                        "appid": app,
+                                        "remote_path": remote,
+                                        "files": files,
+                                        "total_size": sum(f["size"] for f in files),
+                                        "total_size_kb": round(sum(f["size"] for f in files) / 1024, 2),
+                                        "last_modified": max(f["modified"] for f in files) if files else "N/A"
+                                    }
+
+            # 2. Scan installed games
+            steamapps_dirs = [os.path.join(sr, "steamapps")]
+            lib_vdf = os.path.join(sr, "steamapps", "libraryfolders.vdf")
+            if os.path.exists(lib_vdf):
+                try:
+                    with open(lib_vdf, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                    paths = re.findall(r'"path"\s+"([^"]+)"', content)
+                    for p in paths:
+                        sa = os.path.join(p.replace("\\\\", "\\"), "steamapps")
+                        if os.path.exists(sa) and sa not in steamapps_dirs:
+                            steamapps_dirs.append(sa)
+                except:
+                    pass
+
+            for sa in steamapps_dirs:
+                if not os.path.exists(sa): continue
+                for acf in glob.glob(os.path.join(sa, "appmanifest_*.acf")):
+                    try:
+                        with open(acf, "r", encoding="utf-8", errors="ignore") as f:
+                            text = f.read()
+                        appid_match = re.search(r'"appid"\s+"(\d+)"', text)
+                        name_match = re.search(r'"name"\s+"([^"]+)"', text)
+                        installdir_match = re.search(r'"installdir"\s+"([^"]+)"', text)
+                        if appid_match and name_match:
+                            app_id = appid_match.group(1)
+                            game_name = name_match.group(1)
+                            if "redistributable" in game_name.lower() or "steamworks" in game_name.lower():
+                                continue
+                            inst_dir = installdir_match.group(1) if installdir_match else game_name
+                            full_install = os.path.join(sa, "common", inst_dir)
+                            
+                            matched_save = app_saves_map.get(app_id)
+
+                            # Check for local game save folder (e.g. Dead Cells/save)
+                            local_save_dir = os.path.join(full_install, "save")
+                            extra_files = []
+                            if os.path.exists(local_save_dir):
+                                for f in os.listdir(local_save_dir):
+                                    fp = os.path.join(local_save_dir, f)
+                                    if os.path.isfile(fp):
+                                        extra_files.append({
+                                            "name": f,
+                                            "path": fp,
+                                            "size": os.path.getsize(fp),
+                                            "size_kb": round(os.path.getsize(fp) / 1024, 2),
+                                            "modified": datetime.datetime.fromtimestamp(os.path.getmtime(fp)).strftime("%Y-%m-%d %H:%M:%S")
+                                        })
+
+                            installed_games.append({
+                                "id": f"steam_{app_id}",
+                                "appid": app_id,
+                                "name": game_name,
+                                "platform": "Steam",
+                                "install_path": full_install if os.path.exists(full_install) else None,
+                                "has_saves": matched_save is not None or len(extra_files) > 0,
+                                "save_details": matched_save,
+                                "extra_save_files": extra_files,
+                                "remote_save_path": matched_save["remote_path"] if matched_save else (local_save_dir if extra_files else None)
+                            })
+                    except:
+                        pass
+
+        # Also add saves for games not currently installed
+        for app_id, sdata in app_saves_map.items():
+            if not any(g["appid"] == app_id for g in installed_games):
+                installed_games.append({
+                    "id": f"steam_{app_id}",
+                    "appid": app_id,
+                    "name": f"Steam App ({app_id})",
+                    "platform": "Steam (Cloud Save)",
+                    "install_path": None,
+                    "has_saves": True,
+                    "save_details": sdata,
+                    "extra_save_files": [],
+                    "remote_save_path": sdata["remote_path"]
+                })
+
+        return installed_games
+
+    @classmethod
+    def scan_epic_and_local_data(cls):
+        """Scans Epic Games Launcher manifests, AppData LocalLow, and %USERPROFILE%\\Saved Games."""
+        import datetime
+        epic_games = []
+        epic_manifests = r"C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests"
+        if os.path.exists(epic_manifests):
+            for item in os.listdir(epic_manifests):
+                if item.endswith(".item"):
+                    try:
+                        with open(os.path.join(epic_manifests, item), "r", encoding="utf-8", errors="ignore") as f:
+                            data = json.load(f)
+                        disp = data.get("DisplayName")
+                        inst = data.get("InstallLocation")
+                        if disp:
+                            epic_games.append({
+                                "id": f"epic_{data.get('AppName', disp)}",
+                                "name": disp,
+                                "platform": "Epic Games",
+                                "install_path": inst,
+                                "app_name": data.get("AppName"),
+                                "has_saves": False,
+                                "save_path": None,
+                                "save_files": []
+                            })
+                    except:
+                        pass
+
+        # Scan %USERPROFILE%\Saved Games
+        saved_games_root = os.path.expandvars(r"%USERPROFILE%\Saved Games")
+        local_saves = []
+        if os.path.exists(saved_games_root):
+            for sub in os.listdir(saved_games_root):
+                full_s = os.path.join(saved_games_root, sub)
+                if os.path.isdir(full_s) and sub.lower() != "desktop.ini":
+                    files = []
+                    for r_root, _, r_files in os.walk(full_s):
+                        for rf in r_files:
+                            full_rf = os.path.join(r_root, rf)
+                            files.append({
+                                "name": rf,
+                                "path": full_rf,
+                                "size": os.path.getsize(full_rf),
+                                "size_kb": round(os.path.getsize(full_rf) / 1024, 2),
+                                "modified": datetime.datetime.fromtimestamp(os.path.getmtime(full_rf)).strftime("%Y-%m-%d %H:%M:%S")
+                            })
+                    if files:
+                        local_saves.append({
+                            "id": f"savedgames_{sub}",
+                            "name": sub,
+                            "platform": "PC Saved Games",
+                            "save_path": full_s,
+                            "files": files,
+                            "file_count": len(files),
+                            "total_size": sum(f["size"] for f in files),
+                            "total_size_kb": round(sum(f["size"] for f in files) / 1024, 2),
+                            "last_modified": max(f["modified"] for f in files) if files else "N/A"
+                        })
+
+        # Scan %USERPROFILE%\AppData\LocalLow
+        locallow_root = os.path.expandvars(r"%USERPROFILE%\AppData\LocalLow")
+        if os.path.exists(locallow_root):
+            for dev in os.listdir(locallow_root):
+                dev_path = os.path.join(locallow_root, dev)
+                if os.path.isdir(dev_path) and dev.lower() not in ["microsoft", "intel", "nvidia", "temp", "cryptneturlcache", "unity"]:
+                    for title in os.listdir(dev_path):
+                        title_path = os.path.join(dev_path, title)
+                        if os.path.isdir(title_path):
+                            files = []
+                            for r_root, _, r_files in os.walk(title_path):
+                                for rf in r_files:
+                                    if rf.endswith((".sav", ".dat", ".json", ".xml", ".bin", ".db", ".txt")) and not rf.endswith((".log", ".tmp")):
+                                        full_rf = os.path.join(r_root, rf)
+                                        files.append({
+                                            "name": rf,
+                                            "path": full_rf,
+                                            "size": os.path.getsize(full_rf),
+                                            "size_kb": round(os.path.getsize(full_rf) / 1024, 2),
+                                            "modified": datetime.datetime.fromtimestamp(os.path.getmtime(full_rf)).strftime("%Y-%m-%d %H:%M:%S")
+                                        })
+                            if files:
+                                local_saves.append({
+                                    "id": f"locallow_{dev}_{title}",
+                                    "name": title,
+                                    "developer": dev,
+                                    "platform": "AppData LocalLow",
+                                    "save_path": title_path,
+                                    "files": files,
+                                    "file_count": len(files),
+                                    "total_size": sum(f["size"] for f in files),
+                                    "total_size_kb": round(sum(f["size"] for f in files) / 1024, 2),
+                                    "last_modified": max(f["modified"] for f in files) if files else "N/A"
+                                })
+
+        return epic_games, local_saves
+
+    @classmethod
+    def get_all_platforms_overview(cls):
+        """Returns consolidated overview of Xbox, Steam, Epic Games, and Local Saves."""
+        xbox_games = cls.find_all_games()
+        steam_games = cls.scan_steam_data()
+        epic_games, local_saves = cls.scan_epic_and_local_data()
+
+        return {
+            "xbox": xbox_games,
+            "steam": steam_games,
+            "epic": epic_games,
+            "local_saves": local_saves,
+            "counts": {
+                "xbox": len(xbox_games),
+                "steam": len(steam_games),
+                "epic": len(epic_games),
+                "local_saves": len(local_saves)
+            }
+        }

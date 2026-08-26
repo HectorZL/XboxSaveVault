@@ -219,6 +219,80 @@ class SaveTools:
         if not parsed:
             return sync_results
 
+class CrossPlatformBridge:
+    """
+    Bridge for 1-click cross-platform save transfers between Xbox, Steam, Epic Games, and Local PC.
+    """
+
+    @classmethod
+    def transfer_save(cls, source_platform, target_platform, source_file_path, target_game_meta, target_slot_name=None):
+        import shutil
+        import datetime
+        from .wgs_engine import WGSEngine
+
+        if not os.path.exists(source_file_path):
+            raise FileNotFoundError(f"Source file {source_file_path} not found")
+
+        # 1. Transfer to Xbox WGS
+        if target_platform.lower() == "xbox":
+            user_wgs_dir = target_game_meta.get("wgs_user_dir")
+            pkg_name = target_game_meta.get("package_id")
+            slot_name = target_slot_name or os.path.basename(source_file_path)
+            
+            res = WGSEngine.inject_raw_save_to_slot(user_wgs_dir, slot_name, source_file_path, pkg_name=pkg_name)
+            return {
+                "success": True,
+                "message": f"Partida transferida exitosamente a Xbox en ranura '{slot_name}'",
+                "details": res
+            }
+
+        # 2. Transfer to Steam
+        elif target_platform.lower() == "steam":
+            target_dir = target_game_meta.get("remote_save_path") or target_game_meta.get("install_path")
+            if not target_dir:
+                raise ValueError("Target Steam save path not specified")
+
+            os.makedirs(target_dir, exist_ok=True)
+            filename = target_slot_name or os.path.basename(source_file_path)
+            dest_file = os.path.join(target_dir, filename)
+
+            # Safety backup
+            if os.path.exists(dest_file):
+                ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                shutil.copy2(dest_file, f"{dest_file}.bak_{ts}")
+
+            shutil.copy2(source_file_path, dest_file)
+            return {
+                "success": True,
+                "message": f"Partida transferida exitosamente a Steam en: {dest_file}",
+                "dest_file": dest_file,
+                "size": os.path.getsize(dest_file)
+            }
+
+        # 3. Transfer to Epic / Local Folder
+        elif target_platform.lower() in ["epic", "local"]:
+            target_dir = target_game_meta.get("save_path") or target_game_meta.get("install_path")
+            if not target_dir:
+                raise ValueError("Target local/epic save path not specified")
+
+            os.makedirs(target_dir, exist_ok=True)
+            filename = target_slot_name or os.path.basename(source_file_path)
+            dest_file = os.path.join(target_dir, filename)
+
+            if os.path.exists(dest_file):
+                ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                shutil.copy2(dest_file, f"{dest_file}.bak_{ts}")
+
+            shutil.copy2(source_file_path, dest_file)
+            return {
+                "success": True,
+                "message": f"Partida transferida a {target_platform}: {dest_file}",
+                "dest_file": dest_file,
+                "size": os.path.getsize(dest_file)
+            }
+        else:
+            raise ValueError(f"Unknown target platform: {target_platform}")
+
         pkg_name = parsed["pkg_name"].lower()
 
         # 1. Beast of Reincarnation / Project Aibou

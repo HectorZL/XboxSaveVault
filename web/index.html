@@ -58,48 +58,152 @@
       <div class="stat-card">
         <div class="stat-icon games-icon">🎮</div>
         <div class="stat-info">
-          <div class="stat-label">Juegos Detectados</div>
+          <div class="stat-label">Juegos Totales (Todas las Tiendas)</div>
           <div class="stat-value" id="statGamesCount">-</div>
         </div>
       </div>
       <div class="stat-card">
         <div class="stat-icon saves-icon">💾</div>
         <div class="stat-info">
-          <div class="stat-label">Juegos con Partidas WGS</div>
+          <div class="stat-label">Partidas Detectadas</div>
           <div class="stat-value" id="statSavesCount">-</div>
         </div>
       </div>
       <div class="stat-card">
         <div class="stat-icon slots-icon">📦</div>
         <div class="stat-info">
-          <div class="stat-label">Ranuras / Contenedores Totales</div>
+          <div class="stat-label">Xbox WGS Ranuras</div>
           <div class="stat-value" id="statSlotsCount">-</div>
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon status-icon">🛡️</div>
+        <div class="stat-icon status-icon">🔄</div>
         <div class="stat-info">
-          <div class="stat-label">Protección Automática</div>
-          <div class="stat-value text-green">Activa (Pre-Restore)</div>
+          <div class="stat-label">Cross-Save Bridge</div>
+          <div class="stat-value text-green">Steam ⇄ Xbox ⇄ Epic</div>
         </div>
       </div>
     </section>
 
-    <!-- Games Section -->
+    <!-- Platform Navigation Tabs -->
+    <nav class="platform-tabs">
+      <button class="tab-btn active" data-tab="xbox">
+        <span class="tab-icon">🟢</span> Xbox PC & Game Pass <span class="tab-count" id="countXbox">0</span>
+      </button>
+      <button class="tab-btn" data-tab="steam">
+        <span class="tab-icon">🔵</span> Steam Library & Saves <span class="tab-count" id="countSteam">0</span>
+      </button>
+      <button class="tab-btn" data-tab="epic">
+        <span class="tab-icon">⚫</span> Epic & PC Local Saves <span class="tab-count" id="countEpic">0</span>
+      </button>
+      <button class="tab-btn tab-btn-bridge" data-tab="bridge">
+        <span class="tab-icon">🔄</span> Cross-Save Sync Bridge
+      </button>
+    </nav>
+
+    <!-- Main Content Views -->
     <main class="main-content">
-      <div class="section-header">
-        <div class="section-title-wrap">
-          <h2>Tus Juegos y Partidas de Xbox</h2>
-          <p class="section-desc">Selecciona un juego para exportar sus archivos a formato legible (.sav para Steam/PC) o generar un backup completo de Xbox.</p>
+      <!-- Xbox View -->
+      <div id="viewXbox" class="platform-view active">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <h2>Tus Juegos y Partidas de Xbox PC & Game Pass</h2>
+            <p class="section-desc">Selecciona un juego para exportar a formato estándar (.sav/.dat para Steam/PC) o gestionar sus ranuras.</p>
+          </div>
+          <div class="search-filter-wrap">
+            <input type="text" id="gameSearch" class="search-input" placeholder="Buscar juego Xbox (ej. Beast of Reincarnation, Dead Cells)...">
+          </div>
         </div>
-        <div class="search-filter-wrap">
-          <input type="text" id="gameSearch" class="search-input" placeholder="Buscar juego (ej. Beast of Reincarnation, Absolum)...">
-        </div>
+        <div id="gamesGrid" class="games-grid"></div>
       </div>
 
-      <!-- Games Grid -->
-      <div id="gamesGrid" class="games-grid">
-        <!-- Rendered dynamically via JS -->
+      <!-- Steam View -->
+      <div id="viewSteam" class="platform-view">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <h2>Librería de Steam y Partidas en la Nube</h2>
+            <p class="section-desc">Partidas encontradas en tu carpeta <code>userdata</code> y directorios de instalación de Steam.</p>
+          </div>
+          <div class="search-filter-wrap">
+            <input type="text" id="steamSearch" class="search-input" placeholder="Buscar en Steam (ej. Dead Cells, Dave the Diver)...">
+          </div>
+        </div>
+        <div id="steamGrid" class="games-grid"></div>
+      </div>
+
+      <!-- Epic & Local PC View -->
+      <div id="viewEpic" class="platform-view">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <h2>Epic Games Launcher & Partidas Locales de PC</h2>
+            <p class="section-desc">Partidas encontradas en <code>AppData\LocalLow</code> y <code>%USERPROFILE%\Saved Games</code>.</p>
+          </div>
+          <div class="search-filter-wrap">
+            <input type="text" id="epicSearch" class="search-input" placeholder="Buscar en Epic / Partidas Locales...">
+          </div>
+        </div>
+        <div id="epicGrid" class="games-grid"></div>
+      </div>
+
+      <!-- Cross-Save Sync Bridge View -->
+      <div id="viewBridge" class="platform-view">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <h2>🔄 Puente de Transferencia Directa Cross-Save</h2>
+            <p class="section-desc">Transfiere y sincroniza tu progreso directamente entre Xbox, Steam y Epic Games en 1 Clic con conversión automática.</p>
+          </div>
+        </div>
+        
+        <div class="bridge-container">
+          <div class="bridge-card">
+            <h3>1. Origen (¿De dónde quieres pasar la partida?)</h3>
+            <div class="form-group">
+              <label>Plataforma de Origen:</label>
+              <select id="bridgeSourcePlatform" class="form-control">
+                <option value="steam">🔵 Steam</option>
+                <option value="xbox">🟢 Xbox PC / Game Pass</option>
+                <option value="epic">⚫ Epic Games / Guardado Local</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Juego / Partida de Origen:</label>
+              <select id="bridgeSourceGame" class="form-control"></select>
+            </div>
+            <div class="form-group">
+              <label>Archivo de Guardado Específico:</label>
+              <select id="bridgeSourceFile" class="form-control"></select>
+            </div>
+          </div>
+
+          <div class="bridge-arrow">➔</div>
+
+          <div class="bridge-card">
+            <h3>2. Destino (¿A dónde quieres enviarla?)</h3>
+            <div class="form-group">
+              <label>Plataforma de Destino:</label>
+              <select id="bridgeTargetPlatform" class="form-control">
+                <option value="xbox">🟢 Xbox PC / Game Pass</option>
+                <option value="steam">🔵 Steam</option>
+                <option value="epic">⚫ Epic Games / Guardado Local</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Juego de Destino:</label>
+              <select id="bridgeTargetGame" class="form-control"></select>
+            </div>
+            <div class="form-group">
+              <label>Ranura / Nombre en Destino:</label>
+              <input type="text" id="bridgeTargetSlotName" class="form-control" placeholder="user_0.dat o Slot 0">
+            </div>
+          </div>
+        </div>
+
+        <div class="bridge-action-bar">
+          <div class="bridge-summary" id="bridgeSummaryText">Listo para transferir partida.</div>
+          <button id="btnExecuteBridgeTransfer" class="btn btn-primary" style="font-size: 1rem; padding: 12px 28px;">
+            🚀 Transferir & Sincronizar Progreso Ahora
+          </button>
+        </div>
       </div>
     </main>
 

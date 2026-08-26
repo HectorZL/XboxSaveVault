@@ -48,6 +48,14 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
                 self.send_json({"success": False, "error": str(e), "trace": traceback.format_exc()}, 500)
             return
 
+        elif path == "/api/platforms":
+            try:
+                overview = XboxScanner.get_all_platforms_overview()
+                self.send_json({"success": True, "data": overview, "default_backup_root": DEFAULT_BACKUP_ROOT})
+            except Exception as e:
+                self.send_json({"success": False, "error": str(e), "trace": traceback.format_exc()}, 500)
+            return
+
         elif path == "/api/default-backup-dir":
             self.send_json({"success": True, "path": DEFAULT_BACKUP_ROOT})
             return
@@ -121,6 +129,16 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
                 new_id = req_data.get("new_id", "")
                 from .converters import SaveTools
                 res = SaveTools.patch_account_id(input_file, output_file, old_id, new_id)
+                self.send_json(res)
+
+            elif path == "/api/bridge/transfer":
+                source_platform = req_data.get("source_platform")
+                target_platform = req_data.get("target_platform")
+                source_file = req_data.get("source_file")
+                target_meta = req_data.get("target_meta", {})
+                target_slot = req_data.get("target_slot")
+                from .converters import CrossPlatformBridge
+                res = CrossPlatformBridge.transfer_save(source_platform, target_platform, source_file, target_meta, target_slot)
                 self.send_json(res)
 
             elif path == "/api/open-folder":
