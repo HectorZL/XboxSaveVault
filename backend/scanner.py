@@ -5,6 +5,7 @@ import xml.etree.ElementTree as ET
 import json
 import base64
 from .wgs_engine import WGSEngine
+from .covers import GameCoverService
 
 class XboxScanner:
     """

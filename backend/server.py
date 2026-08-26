@@ -196,35 +196,50 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
             self.send_json({"success": False, "error": str(e), "trace": traceback.format_exc()}, 500)
 
     def serve_static(self, path):
-        if path == "/" or path == "":
-            path = "/index.html"
-        
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            base_dir = os.path.join(sys._MEIPASS, "web")
-        else:
-            base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
-        file_path = os.path.join(base_dir, clean_path)
+        try:
+            if path == "/" or path == "":
+                path = "/index.html"
+            
+            clean_path = path.lstrip("/\\")
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                base_dir = os.path.join(sys._MEIPASS, "web")
+            else:
+                base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
+            file_path = os.path.join(base_dir, clean_path)
 
-        if not os.path.exists(file_path) or not os.path.isfile(file_path):
-            self.send_response(404)
+            if not os.path.exists(file_path) or not os.path.isfile(file_path):
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(b"404 Not Found")
+                return
+
+            mime_type, _ = mimetypes.guess_type(file_path)
+            if not mime_type:
+                mime_type = "application/octet-stream"
+
+            with open(file_path, "rb") as f:
+                content = f.read()
+
+            self.send_response(200)
+            self.send_header('Content-Type', f"{mime_type}; charset=utf-8" if "text" in mime_type or "javascript" in mime_type else mime_type)
+            self.send_header('Content-Length', str(len(content)))
             self.end_headers()
-            self.wfile.write(b"404 Not Found")
-            return
-
-        mime_type, _ = mimetypes.guess_type(file_path)
-        if not mime_type:
-            mime_type = "application/octet-stream"
-
-        with open(file_path, "rb") as f:
-            content = f.read()
-
-        self.send_response(200)
-        self.send_header('Content-Type', f"{mime_type}; charset=utf-8" if "text" in mime_type or "javascript" in mime_type else mime_type)
-        self.send_header('Content-Length', str(len(content)))
-        self.end_headers()
-        self.wfile.write(content)
+            self.wfile.write(content)
+        except Exception as e:
+            try:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(f"500 Internal Server Error: {e}".encode('utf-8'))
+            except:
+                pass
 
 def start_server(port=8899):
-    server = HTTPServer(('127.0.0.1', port), XboxSaveAPIHandler)
-    print(f"[*] Xbox Save Manager Server running at http://127.0.0.1:{port}")
-    return server
+    HTTPServer.allow_reuse_address = True
+    for p in range(port, port + 25):
+        try:
+            server = HTTPServer(('127.0.0.1', p), XboxSaveAPIHandler)
+            print(f"[*] Xbox Save Manager Server running at http://127.0.0.1:{p}")
+            return server, p
+        except OSError:
+            continue
+    raise RuntimeError(f"No se pudo enlazar ningún puerto libre en el rango {port}-{port+25}")

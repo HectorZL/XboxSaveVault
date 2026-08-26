@@ -128,8 +128,8 @@ def cli_restore_backup(backup_zip, target_game_name):
         print(f"[i] Copia de seguridad previa guardada en: {res['safety_backup']}")
 
 def start_gui(port=8899):
-    server = start_server(port)
-    url = f"http://127.0.0.1:{port}"
+    server, actual_port = start_server(port)
+    url = f"http://127.0.0.1:{actual_port}"
     print(f"\n[+] Servidor iniciado en: {url}")
     
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
