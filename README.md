@@ -18,7 +18,17 @@
 
 ## 🚀 Inicio Rápido
 
-### Opción 1: Interfaz Visual (1 Clic)
+### Opción 1: Ejecutable Autónomo (.EXE)
+Puedes usar directamente el ejecutable compilado:
+```
+dist\XboxSaveVault.exe
+```
+O compilarlo y autofirmarlo tú mismo con 1 clic en:
+```
+build_exe.bat
+```
+
+### Opción 2: Desde Python / Bat
 Haz doble clic en:
 ```
 Launch_XboxSaveManager.bat

@@ -187,8 +187,10 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
         if path == "/" or path == "":
             path = "/index.html"
         
-        clean_path = path.lstrip("/")
-        base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            base_dir = os.path.join(sys._MEIPASS, "web")
+        else:
+            base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
         file_path = os.path.join(base_dir, clean_path)
 
         if not os.path.exists(file_path) or not os.path.isfile(file_path):

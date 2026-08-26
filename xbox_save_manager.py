@@ -11,11 +11,24 @@ import webbrowser
 import threading
 import time
 
+# Safe stdout/stderr handling for GUI/noconsole mode on Windows
+class NullWriter:
+    def write(self, s): pass
+    def flush(self): pass
+    def isatty(self): return False
+
+if sys.stdout is None:
+    sys.stdout = NullWriter()
+if sys.stderr is None:
+    sys.stderr = NullWriter()
+
 # Ensure proper utf-8 encoding on Windows console
 if sys.platform == "win32":
     try:
-        sys.stdout.reconfigure(encoding='utf-8')
-        sys.stderr.reconfigure(encoding='utf-8')
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8')
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8')
     except:
         pass
 
@@ -117,17 +130,65 @@ def cli_restore_backup(backup_zip, target_game_name):
 def start_gui(port=8899):
     server = start_server(port)
     url = f"http://127.0.0.1:{port}"
-    print(f"\n[+] Abriendo interfaz visual en: {url}")
+    print(f"\n[+] Servidor iniciado en: {url}")
     
-    def open_browser():
-        time.sleep(0.8)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    # Intentar abrir con pywebview (Ventana nativa ultraligera WebView2)
+    has_webview = False
+    try:
+        import webview
+        has_webview = True
+    except ImportError:
+        pass
+
+    if has_webview:
+        print("[*] Iniciando ventana de escritorio nativa (WebView2)...")
+        try:
+            window = webview.create_window(
+                title="Xbox Save Vault - Gestor de Partidas Xbox PC",
+                url=url,
+                width=1280,
+                height=820,
+                min_size=(980, 640),
+                background_color="#0a0f12"
+            )
+            webview.start(gui="edgechromium")
+            print("[*] Ventana cerrada por el usuario. Finalizando aplicación...")
+            server.shutdown()
+            return
+        except Exception as e:
+            print(f"[!] Aviso al iniciar pywebview ({e}). Usando modo alternativo...")
+
+    # Fallback 1: Microsoft Edge en modo aplicación (ventana independiente sin barras)
+    launched_app_mode = False
+    edge_paths = [
+        os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
+        os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
+        "msedge"
+    ]
+    for ep in edge_paths:
+        try:
+            import subprocess
+            subprocess.Popen([ep, f"--app={url}", "--window-size=1280,820"])
+            print("[+] Abierto en modo aplicación autónoma de Edge.")
+            launched_app_mode = True
+            break
+        except:
+            continue
+
+    # Fallback 2: Navegador por defecto
+    if not launched_app_mode:
+        print("[+] Abriendo en el navegador...")
         webbrowser.open(url)
 
-    threading.Thread(target=open_browser, daemon=True).start()
     try:
-        server.serve_forever()
+        while True:
+            time.sleep(1)
     except KeyboardInterrupt:
-        print("\n[*] Servidor detenido.")
+        print("\n[*] Deteniendo servidor...")
+        server.shutdown()
 
 def main():
     parser = argparse.ArgumentParser(description="Xbox Save Vault - Gestor de Partidas Xbox PC & Game Pass")
