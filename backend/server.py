@@ -131,6 +131,18 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
                 res = SaveTools.patch_account_id(input_file, output_file, old_id, new_id)
                 self.send_json(res)
 
+            elif path == "/api/bridge/verify-compatibility":
+                source_platform = req_data.get("source_platform")
+                target_platform = req_data.get("target_platform")
+                source_file = req_data.get("source_file")
+                source_meta = req_data.get("source_meta", {})
+                target_meta = req_data.get("target_meta", {})
+                from .converters import CompatibilityChecker
+                res = CompatibilityChecker.check_transfer_compatibility(
+                    source_platform, target_platform, source_file, source_meta, target_meta
+                )
+                self.send_json({"success": True, "data": res})
+
             elif path == "/api/bridge/transfer":
                 source_platform = req_data.get("source_platform")
                 target_platform = req_data.get("target_platform")

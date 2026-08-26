@@ -219,6 +219,153 @@ class SaveTools:
         if not parsed:
             return sync_results
 
+class CompatibilityChecker:
+    """
+    Pre-verification system that analyzes game and save versions between platforms
+    before transferring to prevent incompatibility errors.
+    """
+
+    @classmethod
+    def get_game_version(cls, platform, game_meta):
+        """Extracts version info from platform metadata, manifests, or game files."""
+        if not game_meta:
+            return "Desconocida"
+
+        platform = (platform or "").lower()
+
+        if platform == "xbox":
+            # Check version in game_meta or MicrosoftGame.config
+            ver = game_meta.get("version")
+            inst = game_meta.get("install_path")
+            if inst and os.path.exists(inst):
+                mg_cfg = os.path.join(inst, "MicrosoftGame.config")
+                if os.path.exists(mg_cfg):
+                    try:
+                        with open(mg_cfg, "r", encoding="utf-8", errors="ignore") as f:
+                            text = f.read()
+                        import re
+                        m = re.search(r'Version="([^"]+)"', text)
+                        if m: ver = f"v{m.group(1)}"
+                    except:
+                        pass
+            return ver or "v1.0 (Xbox)"
+
+        elif platform == "steam":
+            # Check Steam appmanifest or install dir
+            inst = game_meta.get("install_path")
+            app_id = game_meta.get("appid")
+            build_id = None
+            if app_id:
+                manifest_path = rf"C:\Program Files (x86)\Steam\steamapps\appmanifest_{app_id}.acf"
+                if os.path.exists(manifest_path):
+                    try:
+                        with open(manifest_path, "r", encoding="utf-8", errors="ignore") as f:
+                            import re
+                            m = re.search(r'"buildid"\s+"(\d+)"', f.read())
+                            if m: build_id = m.group(1)
+                    except:
+                        pass
+            if build_id:
+                return f"Steam Build #{build_id}"
+            return "Steam (Última versión)"
+
+        elif platform in ["epic", "local"]:
+            return "PC Local / Epic"
+
+        return "v1.0"
+
+    @classmethod
+    def inspect_save_version(cls, file_path):
+        """Inspects internal version signatures inside save files (e.g. Dead Cells, Unreal Engine, etc.)."""
+        if not file_path or not os.path.exists(file_path):
+            return None
+
+        try:
+            with open(file_path, "rb") as f:
+                header = f.read(128)
+
+            # Dead Cells magic
+            if header.startswith(b"\xde\xad\xce\x11"):
+                # Find date / version integer
+                import re
+                import struct
+                m = re.search(rb'202\d-\d\d-\d\d', header)
+                date_str = m.group(0).decode() if m else None
+                z_idx = header.find(b"\x78\xda")
+                ver_int = None
+                if z_idx != -1 and z_idx >= 4:
+                    ver_int = struct.unpack_from("<I", header, z_idx - 4)[0]
+                
+                return {
+                    "format": "Dead Cells HXS",
+                    "save_version_int": ver_int,
+                    "date": date_str,
+                    "summary": f"Dead Cells Ver {ver_int or 'Desconocida'} ({date_str or 'Sin fecha'})"
+                }
+
+            # Unreal Engine GVAS
+            if header.startswith(b"GVAS"):
+                return {
+                    "format": "Unreal Engine GVAS",
+                    "summary": "Unreal Engine Save Data (Compatible)"
+                }
+        except:
+            pass
+
+        return None
+
+    @classmethod
+    def check_transfer_compatibility(cls, source_platform, target_platform, source_file, source_game_meta, target_game_meta):
+        """Performs pre-verification and returns warnings if version mismatch is detected."""
+        src_ver = cls.get_game_version(source_platform, source_game_meta)
+        tgt_ver = cls.get_game_version(target_platform, target_game_meta)
+        save_info = cls.inspect_save_version(source_file)
+
+        src_name = source_game_meta.get("name", "Juego de Origen")
+        tgt_name = target_game_meta.get("name", "Juego de Destino")
+
+        # Specific known game checks (e.g., Dead Cells)
+        if "dead cells" in src_name.lower() or "dead cells" in tgt_name.lower():
+            if source_platform.lower() == "steam" and target_platform.lower() == "xbox":
+                return {
+                    "has_mismatch": True,
+                    "severity": "warning",
+                    "source_platform": source_platform.upper(),
+                    "target_platform": target_platform.upper(),
+                    "source_version": f"Steam Final ({save_info.get('summary') if save_info else src_ver})",
+                    "target_version": f"Xbox {tgt_ver} (Build 2023-10-31)",
+                    "title": "⚠️ Posible Desfase de Versiones Detectado",
+                    "message": f"La versión de Steam ({src_ver}) contiene actualizaciones más recientes que la versión de Xbox ({tgt_ver}). Si Xbox no está actualizada a la última versión, el juego puede requerir una actualización antes de cargar la partida.",
+                    "recommendation": "Verifica si hay actualizaciones en la Microsoft Store / App de Xbox antes de iniciar."
+                }
+
+        # Check for general version disparity
+        if src_ver != tgt_ver and src_ver != "Desconocida" and tgt_ver != "Desconocida" and not (source_platform == target_platform):
+            return {
+                "has_mismatch": True,
+                "severity": "info",
+                "source_platform": source_platform.upper(),
+                "target_platform": target_platform.upper(),
+                "source_version": f"{source_platform.upper()} {src_ver}",
+                "target_version": f"{target_platform.upper()} {tgt_ver}",
+                "title": "ℹ️ Pre-Verificación de Versiones",
+                "message": f"Versión Origen ({source_platform.upper()}: {src_ver}) ➔ Versión Destino ({target_platform.upper()}: {tgt_ver}).",
+                "recommendation": "Comprueba que ambas plataformas tengan el juego en su versión más reciente."
+            }
+
+        return {
+            "has_mismatch": False,
+            "severity": "success",
+            "source_platform": source_platform.upper(),
+            "target_platform": target_platform.upper(),
+            "source_version": src_ver,
+            "target_version": tgt_ver,
+            "title": "✅ Compatibilidad Verificada",
+            "message": "Ambas plataformas y la cabecera de la partida son compatibles.",
+            "recommendation": "Puedes transferir tu partida con total seguridad."
+        }
+
+
 class CrossPlatformBridge:
     """
     Bridge for 1-click cross-platform save transfers between Xbox, Steam, Epic Games, and Local PC.

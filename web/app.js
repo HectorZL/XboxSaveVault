@@ -510,6 +510,10 @@ function setupBridge() {
     updateBridgeSourceFiles();
   });
 
+  srcFile.addEventListener('change', () => {
+    checkBridgeCompatibility();
+  });
+
   btnTransfer.addEventListener('click', () => {
     executeBridgeTransfer();
   });
@@ -596,6 +600,8 @@ function updateBridgeSourceFiles() {
     const selectedFile = files[0];
     tgtSlotInput.value = selectedFile.raw_name || selectedFile.name;
   }
+
+  checkBridgeCompatibility();
 }
 
 function updateBridgeTargetGames() {
@@ -614,19 +620,131 @@ function updateBridgeTargetGames() {
     opt.textContent = `${item.name} (${item.platform || 'Xbox'})`;
     select.appendChild(opt);
   });
+
+  checkBridgeCompatibility();
 }
 
-async function executeBridgeTransfer() {
+let lastCompatibilityResult = null;
+
+async function checkBridgeCompatibility() {
   const srcPlatform = document.getElementById('bridgeSourcePlatform').value;
   const tgtPlatform = document.getElementById('bridgeTargetPlatform').value;
   const srcFilePath = document.getElementById('bridgeSourceFile').value;
+  const srcGameId = document.getElementById('bridgeSourceGame').value;
   const tgtGameId = document.getElementById('bridgeTargetGame').value;
-  const tgtSlotName = document.getElementById('bridgeTargetSlotName').value.trim();
+
+  const banner = document.getElementById('bridgePrecheckBanner');
+  if (!banner || !srcFilePath || !tgtGameId) {
+    if (banner) banner.style.display = 'none';
+    lastCompatibilityResult = null;
+    return;
+  }
+
+  let srcMeta = {};
+  if (srcPlatform === 'steam') srcMeta = (allData.steam || []).find(g => g.id === srcGameId) || {};
+  else if (srcPlatform === 'xbox') srcMeta = (allData.xbox || []).find(g => g.id === srcGameId) || {};
+  else if (srcPlatform === 'epic') srcMeta = [...(allData.local_saves || []), ...(allData.epic || [])].find(g => g.id === srcGameId) || {};
+
+  let tgtMeta = {};
+  if (tgtPlatform === 'xbox') tgtMeta = (allData.xbox || []).find(g => g.id === tgtGameId) || {};
+  else if (tgtPlatform === 'steam') tgtMeta = (allData.steam || []).find(g => g.id === tgtGameId) || {};
+  else if (tgtPlatform === 'epic') tgtMeta = [...(allData.local_saves || []), ...(allData.epic || [])].find(g => g.id === tgtGameId) || {};
+
+  try {
+    const res = await fetch('/api/bridge/verify-compatibility', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_platform: srcPlatform,
+        target_platform: tgtPlatform,
+        source_file: srcFilePath,
+        source_meta: srcMeta,
+        target_meta: tgtMeta
+      })
+    });
+    const data = await res.json();
+    if (data.success && data.data) {
+      lastCompatibilityResult = data.data;
+      renderPrecheckBanner(data.data);
+    }
+  } catch (e) {
+    console.error('Error pre-checking compatibility:', e);
+  }
+}
+
+function renderPrecheckBanner(info) {
+  const banner = document.getElementById('bridgePrecheckBanner');
+  const title = document.getElementById('precheckTitle');
+  const badgeSrc = document.getElementById('precheckBadgeSource');
+  const badgeTgt = document.getElementById('precheckBadgeTarget');
+  const msg = document.getElementById('precheckMessage');
+  const rec = document.getElementById('precheckRecommendation');
+
+  if (!banner) return;
+
+  banner.style.display = 'flex';
+  banner.className = `bridge-precheck-box precheck-${info.severity || 'info'}`;
+
+  title.textContent = info.title || 'Pre-Verificación de Compatibilidad';
+  badgeSrc.textContent = `${info.source_platform}: ${info.source_version || 'v1.0'}`;
+  badgeTgt.textContent = `${info.target_platform}: ${info.target_version || 'v1.0'}`;
+  msg.textContent = info.message || '';
+  rec.textContent = info.recommendation ? `💡 Recomendación: ${info.recommendation}` : '';
+}
+
+function showCompatibilityModal(info) {
+  const modal = document.getElementById('compatibilityWarningModal');
+  if (!modal) return;
+
+  document.getElementById('modalSrcPlatform').textContent = `Plataforma de Origen (${info.source_platform})`;
+  document.getElementById('modalSrcVer').textContent = info.source_version;
+  document.getElementById('modalTgtPlatform').textContent = `Plataforma de Destino (${info.target_platform})`;
+  document.getElementById('modalTgtVer').textContent = info.target_version;
+
+  document.getElementById('modalWarningText').textContent = info.message;
+  document.getElementById('modalRecommendationText').innerHTML = `<strong>💡 Recomendación:</strong> ${info.recommendation}`;
+
+  document.getElementById('btnProceedDespiteWarning').onclick = () => {
+    closeCompatibilityModal();
+    doExecuteTransfer();
+  };
+
+  modal.classList.add('active');
+}
+
+function closeCompatibilityModal() {
+  const modal = document.getElementById('compatibilityWarningModal');
+  if (modal) modal.classList.remove('active');
+}
+
+async function executeBridgeTransfer() {
+  const srcFilePath = document.getElementById('bridgeSourceFile').value;
+  const tgtGameId = document.getElementById('bridgeTargetGame').value;
 
   if (!srcFilePath) {
     showToast('Selecciona un archivo de partida de origen', 'error');
     return;
   }
+  if (!tgtGameId) {
+    showToast('Selecciona un juego de destino válido', 'error');
+    return;
+  }
+
+  // Pre-verification check: if mismatch is detected, show warning modal
+  if (lastCompatibilityResult && lastCompatibilityResult.has_mismatch && lastCompatibilityResult.severity === 'warning') {
+    showCompatibilityModal(lastCompatibilityResult);
+    return;
+  }
+
+  doExecuteTransfer();
+}
+
+async function doExecuteTransfer() {
+  const srcPlatform = document.getElementById('bridgeSourcePlatform').value;
+  const tgtPlatform = document.getElementById('bridgeTargetPlatform').value;
+  const srcFilePath = document.getElementById('bridgeSourceFile').value;
+  const tgtGameId = document.getElementById('bridgeTargetGame').value;
+  const tgtSlotName = document.getElementById('bridgeTargetSlotName').value.trim();
 
   let tgtMeta = {};
   if (tgtPlatform === 'xbox') {

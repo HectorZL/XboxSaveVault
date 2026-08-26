@@ -198,6 +198,22 @@
           </div>
         </div>
 
+        <!-- Live Pre-Verification Banner -->
+        <div id="bridgePrecheckBanner" class="bridge-precheck-box precheck-info" style="display: none;">
+          <div class="precheck-header">
+            <div class="precheck-title" id="precheckTitle">🔍 Analizando compatibilidad de versiones...</div>
+            <div class="precheck-badges">
+              <span class="badge badge-source" id="precheckBadgeSource">Steam</span>
+              <span class="badge-vs">VS</span>
+              <span class="badge badge-target" id="precheckBadgeTarget">Xbox</span>
+            </div>
+          </div>
+          <div class="precheck-body">
+            <div class="precheck-message" id="precheckMessage">-</div>
+            <div class="precheck-recommendation" id="precheckRecommendation">-</div>
+          </div>
+        </div>
+
         <div class="bridge-action-bar">
           <div class="bridge-summary" id="bridgeSummaryText">Listo para transferir partida.</div>
           <button id="btnExecuteBridgeTransfer" class="btn btn-primary" style="font-size: 1rem; padding: 12px 28px;">
@@ -206,6 +222,43 @@
         </div>
       </div>
     </main>
+
+    <!-- Compatibility Warning Modal (Cartel de Pre-verificación) -->
+    <div id="compatibilityWarningModal" class="modal-overlay">
+      <div class="modal-card modal-lg">
+        <div class="modal-header">
+          <h3 id="modalWarningTitle" style="color: #f59e0b;">⚠️ Advertencia de Desfase de Versiones</h3>
+          <button class="modal-close" onclick="closeCompatibilityModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="version-comparison-grid">
+            <div class="version-box version-box-source">
+              <div class="version-platform-label" id="modalSrcPlatform">Plataforma Origen</div>
+              <div class="version-val" id="modalSrcVer">vX.X</div>
+            </div>
+            <div class="version-diff-arrow">≠</div>
+            <div class="version-box version-box-target">
+              <div class="version-platform-label" id="modalTgtPlatform">Plataforma Destino</div>
+              <div class="version-val" id="modalTgtVer">vY.Y</div>
+            </div>
+          </div>
+
+          <div class="alert-box alert-warning" id="modalWarningText">
+            La partida de origen fue creada en una versión distinta a la del juego instalado en destino.
+          </div>
+
+          <div class="recommendation-box" id="modalRecommendationText">
+            <strong>💡 Recomendación:</strong> Verifica si hay actualizaciones pendientes en la app correspondiente antes de jugar.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="closeCompatibilityModal()">Cancelar</button>
+          <button id="btnProceedDespiteWarning" class="btn btn-warning">
+            ⚠️ Entendido, Transferir de Todos Modos
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Activity & Quick Log Section -->
     <section class="log-section">
