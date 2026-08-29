@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
   setupTabs();
   setupBridge();
+  setupSettings();
 });
 
 function setupTabs() {
@@ -1101,6 +1102,9 @@ function openSlotsModal(gameId) {
           </div>
         </div>
         <div class="slot-actions">
+          <button class="btn btn-action-accent btn-sm" onclick="exportSlotRawFromModal('${c.name}')" title="Exportar este slot individual a archivo .SAV">
+            📥 Exportar .SAV
+          </button>
           <button class="btn btn-secondary btn-sm" onclick="openInjectModal('${c.name}')">
             🔄 Reemplazar / Inyectar
           </button>
@@ -1311,11 +1315,279 @@ function showToast(message, type = 'success') {
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
   toast.innerHTML = `
-    <span>${type === 'success' ? '✅' : '⚠️'}</span>
+    <span>${type === 'success' ? '✅' : (type === 'info' ? 'ℹ️' : '⚠️')}</span>
     <span>${message}</span>
   `;
   container.appendChild(toast);
   setTimeout(() => {
     toast.remove();
   }, 4500);
+}
+
+// ----------------------------------------------------
+// Settings & Windows Task Scheduler (Silent Cron) Setup
+// ----------------------------------------------------
+async function setupSettings() {
+  await loadSettings();
+
+  document.getElementById('btnBrowseBackupDir')?.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/open-file-selector', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'folder' })
+      });
+      const data = await res.json();
+      if (data.selected_path) {
+        document.getElementById('cfgBackupRootDir').value = data.selected_path;
+      }
+    } catch (e) {
+      showToast('Error al seleccionar carpeta', 'error');
+    }
+  });
+
+  document.getElementById('btnOpenCurrentBackupDir')?.addEventListener('click', () => {
+    const p = document.getElementById('cfgBackupRootDir').value.trim() || defaultBackupDir;
+    openFolder(p);
+  });
+
+  document.getElementById('btnSaveStorageSettings')?.addEventListener('click', async () => {
+    const backupDir = document.getElementById('cfgBackupRootDir').value.trim();
+    const maxHist = parseInt(document.getElementById('cfgMaxHistory').value, 10);
+    const syncInterval = parseInt(document.getElementById('cfgSyncInterval')?.value, 10) || 60;
+    const autoSyncOn = document.getElementById('cfgAutoSyncEnabled')?.checked;
+
+    if (!backupDir) {
+      showToast('Por favor especifica un directorio de respaldo válido', 'error');
+      return;
+    }
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          backup_root_dir: backupDir,
+          max_backup_history: maxHist,
+          auto_sync_interval_mins: syncInterval,
+          auto_sync_enabled: autoSyncOn
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        defaultBackupDir = data.config.backup_root_dir;
+        if (data.scheduler_refreshed) {
+          showToast('¡Configuración guardada y Tarea de Windows (Cron) actualizada!', 'success');
+          logActivity(`[CONFIG] Ruta: ${defaultBackupDir} | Tarea silenciosa de Windows actualizada (cada ${syncInterval}m)`, 'success');
+        } else {
+          showToast('¡Configuración de almacenamiento guardada exitosamente!', 'success');
+          logActivity(`[CONFIG] Ruta de respaldos actualizada a: ${defaultBackupDir}`, 'success');
+        }
+        await loadSettings();
+      }
+    } catch (e) {
+      showToast('Error guardando configuración', 'error');
+    }
+  });
+
+  document.getElementById('cfgAutoSyncEnabled')?.addEventListener('change', async (e) => {
+    const enabled = e.target.checked;
+    await updateConfigKey('auto_sync_enabled', enabled);
+    showToast(enabled ? 'Auto-Sync periódico habilitado' : 'Auto-Sync pausado', 'info');
+    logActivity(`[AUTO-SYNC] Modo periódico en app: ${enabled ? 'Activado' : 'Desactivado'}`, 'info');
+    await loadSettings();
+  });
+
+  document.getElementById('cfgSyncInterval')?.addEventListener('change', async (e) => {
+    const mins = parseInt(e.target.value, 10);
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auto_sync_interval_mins: mins })
+    });
+    const data = await res.json();
+    if (data.scheduler_refreshed) {
+      showToast(`Intervalo actualizado a ${mins} min y Tarea de Windows sincronizada`, 'success');
+      logActivity(`[SCHEDULER] Tarea de Windows reconfigurada para ejecutarse cada ${mins} minutos.`, 'success');
+    } else {
+      showToast(`Intervalo actualizado a ${mins} minutos`, 'info');
+    }
+    await loadSettings();
+  });
+
+  document.getElementById('btnSyncNow')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btnSyncNow');
+    btn.disabled = true;
+    btn.textContent = '⏳ Sincronizando...';
+    logActivity('[SYNC] Iniciando sincronización manual de todas las partidas...', 'info');
+
+    try {
+      const res = await fetch('/api/sync/run-now', { method: 'POST' });
+      const data = await res.json();
+      if (data.success && data.results) {
+        const r = data.results;
+        showToast(`¡Sincronización completada! ${r.total_games} juegos respaldados`, 'success');
+        logActivity(`[SYNC SUCCESS] Se respaldaron ${r.total_games} juegos y ${r.total_saves} partidas directamente en: ${defaultBackupDir}`, 'success');
+        await loadSettings();
+      } else {
+        showToast('Error durante la sincronización', 'error');
+      }
+    } catch (e) {
+      showToast('Error de conexión con el servidor', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '⚡ Sincronizar Todo Ahora';
+    }
+  });
+
+  document.getElementById('btnInstallScheduler')?.addEventListener('click', async () => {
+    const interval = parseInt(document.getElementById('cfgSyncInterval').value, 10) || 60;
+    try {
+      const res = await fetch('/api/sync/scheduler/install', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interval_mins: interval })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast('¡Tarea silenciosa de Windows instalada con éxito!', 'success');
+        logActivity(`[SCHEDULER] ${data.message}`, 'success');
+        await loadSettings();
+      } else {
+        showToast(`Error: ${data.error}`, 'error');
+      }
+    } catch (e) {
+      showToast('Error al instalar la tarea programada', 'error');
+    }
+  });
+
+  document.getElementById('btnUninstallScheduler')?.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/sync/scheduler/uninstall', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Tarea programada desinstalada', 'info');
+        logActivity('[SCHEDULER] Tarea de Windows eliminada.', 'info');
+        await loadSettings();
+      } else {
+        showToast(`Error: ${data.error}`, 'error');
+      }
+    } catch (e) {
+      showToast('Error al desinstalar la tarea', 'error');
+    }
+  });
+}
+
+async function loadSettings() {
+  try {
+    const res = await fetch('/api/config');
+    const data = await res.json();
+    if (data.success) {
+      const cfg = data.config;
+      const sched = data.scheduler;
+
+      if (document.getElementById('cfgBackupRootDir')) document.getElementById('cfgBackupRootDir').value = cfg.backup_root_dir || defaultBackupDir;
+      if (document.getElementById('cfgMaxHistory')) document.getElementById('cfgMaxHistory').value = String(cfg.max_backup_history ?? 10);
+      if (document.getElementById('cfgAutoSyncEnabled')) document.getElementById('cfgAutoSyncEnabled').checked = Boolean(cfg.auto_sync_enabled);
+      if (document.getElementById('cfgSyncInterval')) document.getElementById('cfgSyncInterval').value = String(cfg.auto_sync_interval_mins ?? 60);
+
+      // Sync status banner
+      const descEl = document.getElementById('syncStatusDesc');
+      if (descEl) {
+        const lastTime = cfg.last_sync_time || 'Nunca';
+        const lastStatus = cfg.last_sync_status || 'Sin ejecuciones previas';
+        descEl.textContent = `Última sincronización: ${lastTime} • ${lastStatus}`;
+      }
+
+      // Scheduler status badge & buttons
+      const badge = document.getElementById('schedulerBadge');
+      const btnInstall = document.getElementById('btnInstallScheduler');
+      const btnUninstall = document.getElementById('btnUninstallScheduler');
+      const nextRunEl = document.getElementById('schedulerNextRun');
+
+      if (sched && sched.installed) {
+        if (badge) {
+          badge.textContent = `Activa (${sched.status || 'Programada'})`;
+          badge.className = 'badge-task badge-task-on';
+        }
+        if (btnInstall) btnInstall.textContent = '🔄 Reconfigurar Frecuencia de Tarea';
+        if (btnUninstall) btnUninstall.style.display = 'inline-block';
+        if (nextRunEl && sched.next_run) nextRunEl.textContent = `Próxima ejecución: ${sched.next_run}`;
+      } else {
+        if (badge) {
+          badge.textContent = 'No Instalada';
+          badge.className = 'badge-task badge-task-off';
+        }
+        if (btnInstall) btnInstall.textContent = '⚙️ Instalar Tarea Programada Silenciosa';
+        if (btnUninstall) btnUninstall.style.display = 'none';
+        if (nextRunEl) nextRunEl.textContent = '';
+      }
+    }
+  } catch (e) {
+    console.error('Error cargando configuración:', e);
+  }
+}
+
+async function updateConfigKey(key, value) {
+  try {
+    const payload = {};
+    payload[key] = value;
+    await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {}
+}
+
+async function exportSlotRawFromModal(slotName) {
+  if (!currentGame) return;
+  const userWgsDir = currentGame.wgs_user_dirs && currentGame.wgs_user_dirs[0] ? currentGame.wgs_user_dirs[0].path : null;
+  if (!userWgsDir) {
+    showToast('No se encontró directorio WGS para este juego', 'error');
+    return;
+  }
+
+  // Ask where to save via Windows Native Save File Dialog
+  let targetPath = null;
+  try {
+    const selectorRes = await fetch('/api/open-file-selector', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'save_file',
+        filter: 'Save File (*.sav)|*.sav|All Files (*.*)|*.*',
+        default_name: `${slotName}.sav`
+      })
+    });
+    const sData = await selectorRes.json();
+    if (sData.selected_path) {
+      targetPath = sData.selected_path;
+    }
+  } catch (e) {}
+
+  logActivity(`[EXPORT SLOT] Exportando ranura '${slotName}' para ${currentGame.name}...`, 'info');
+
+  try {
+    const res = await fetch('/api/export/slot-raw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_wgs_dir: userWgsDir,
+        container_name: slotName,
+        game_name: currentGame.name,
+        dest_path: targetPath
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`¡Ranura exportada: ${data.filename}!`, 'success');
+      logActivity(`[SUCCESS] Ranura '${slotName}' exportada como .SAV en: ${data.exported_file} (${data.size_kb} KB)`, 'success');
+      openFolder(data.exported_file.substring(0, data.exported_file.lastIndexOf('\\')));
+    } else {
+      showToast(`Error: ${data.error}`, 'error');
+      logActivity(`[ERROR] ${data.error}`, 'error');
+    }
+  } catch (e) {
+    showToast('Error exportando ranura', 'error');
+  }
 }

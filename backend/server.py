@@ -4,13 +4,18 @@ import json
 import urllib.parse
 import subprocess
 import mimetypes
+import threading
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import traceback
 from .wgs_engine import WGSEngine
 from .scanner import XboxScanner
+from .config_manager import ConfigManager
 
-DEFAULT_BACKUP_ROOT = os.path.join(os.path.expanduser("~"), "XboxSaveBackups")
-os.makedirs(DEFAULT_BACKUP_ROOT, exist_ok=True)
+def get_current_backup_root():
+    return ConfigManager.get_backup_dir()
+
+DEFAULT_BACKUP_ROOT = get_current_backup_root()
 
 class XboxSaveAPIHandler(BaseHTTPRequestHandler):
 
@@ -39,11 +44,12 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        backup_root = ConfigManager.get_backup_dir()
 
         if path == "/api/games":
             try:
                 games = XboxScanner.find_all_games()
-                self.send_json({"success": True, "games": games, "default_backup_root": DEFAULT_BACKUP_ROOT})
+                self.send_json({"success": True, "games": games, "default_backup_root": backup_root})
             except Exception as e:
                 self.send_json({"success": False, "error": str(e), "trace": traceback.format_exc()}, 500)
             return
@@ -51,13 +57,39 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
         elif path == "/api/platforms":
             try:
                 overview = XboxScanner.get_all_platforms_overview()
-                self.send_json({"success": True, "data": overview, "default_backup_root": DEFAULT_BACKUP_ROOT})
+                self.send_json({"success": True, "data": overview, "default_backup_root": backup_root})
             except Exception as e:
                 self.send_json({"success": False, "error": str(e), "trace": traceback.format_exc()}, 500)
             return
 
         elif path == "/api/default-backup-dir":
-            self.send_json({"success": True, "path": DEFAULT_BACKUP_ROOT})
+            self.send_json({"success": True, "path": backup_root})
+            return
+
+        elif path == "/api/config":
+            try:
+                cfg = ConfigManager.load_config()
+                sched = ConfigManager.get_scheduled_task_status()
+                self.send_json({"success": True, "config": cfg, "scheduler": sched})
+            except Exception as e:
+                self.send_json({"success": False, "error": str(e)}, 500)
+            return
+
+        elif path == "/api/sync/status":
+            try:
+                cfg = ConfigManager.load_config()
+                sched = ConfigManager.get_scheduled_task_status()
+                self.send_json({
+                    "success": True,
+                    "last_sync_time": cfg.get("last_sync_time"),
+                    "last_sync_status": cfg.get("last_sync_status"),
+                    "last_sync_files_count": cfg.get("last_sync_files_count", 0),
+                    "auto_sync_enabled": cfg.get("auto_sync_enabled", False),
+                    "auto_sync_interval_mins": cfg.get("auto_sync_interval_mins", 60),
+                    "scheduler": sched
+                })
+            except Exception as e:
+                self.send_json({"success": False, "error": str(e)}, 500)
             return
 
         elif path == "/api/tools/user-ids":
@@ -89,6 +121,7 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
         path = parsed.path
         length = int(self.headers.get('Content-Length', 0))
         body_bytes = self.rfile.read(length) if length > 0 else b'{}'
+        backup_root = ConfigManager.get_backup_dir()
         
         try:
             req_data = json.loads(body_bytes.decode('utf-8')) if body_bytes else {}
@@ -100,10 +133,34 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
                 games = XboxScanner.find_all_games()
                 self.send_json({"success": True, "games": games})
 
+            elif path == "/api/config":
+                updated = ConfigManager.load_config()
+                for k, v in req_data.items():
+                    updated[k] = v
+                ConfigManager.save_config(updated)
+                
+                # If Windows scheduled task is installed, refresh it immediately with current config!
+                sched = ConfigManager.get_scheduled_task_status()
+                sched_refreshed = False
+                if sched.get("installed"):
+                    interval = updated.get("auto_sync_interval_mins", 60)
+                    ConfigManager.install_windows_scheduled_task(interval)
+                    sched = ConfigManager.get_scheduled_task_status()
+                    sched_refreshed = True
+
+                self.send_json({"success": True, "config": updated, "scheduler": sched, "scheduler_refreshed": sched_refreshed})
+
             elif path == "/api/export/raw":
                 user_wgs_dir = req_data.get("user_wgs_dir")
-                dest_dir = req_data.get("dest_dir") or os.path.join(DEFAULT_BACKUP_ROOT, "Raw_Saves", req_data.get("game_name", "Game"))
+                dest_dir = req_data.get("dest_dir") or os.path.join(backup_root, req_data.get("game_name", "Game"))
                 res = WGSEngine.export_raw_saves(user_wgs_dir, dest_dir)
+                self.send_json(res)
+
+            elif path == "/api/export/slot-raw":
+                user_wgs_dir = req_data.get("user_wgs_dir")
+                container_name = req_data.get("container_name")
+                dest_path = req_data.get("dest_path") or os.path.join(backup_root, req_data.get("game_name", "Game"), f"{container_name}.sav")
+                res = WGSEngine.export_single_slot_raw(user_wgs_dir, container_name, dest_path)
                 self.send_json(res)
 
             elif path == "/api/export/backup":
@@ -111,7 +168,7 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
                 game_name = req_data.get("game_name", "XboxGame").replace(" ", "_")
                 import datetime
                 ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                backup_path = req_data.get("backup_path") or os.path.join(DEFAULT_BACKUP_ROOT, "Backups", f"{game_name}_Backup_{ts}.zip")
+                backup_path = req_data.get("backup_path") or os.path.join(backup_root, game_name, f"{game_name}_Backup_{ts}.zip")
                 res = WGSEngine.create_full_xbox_backup(user_wgs_dir, backup_path, req_data.get("game_meta"))
                 self.send_json(res)
 
@@ -126,6 +183,21 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
                 container_name = req_data.get("container_name")
                 raw_file_path = req_data.get("raw_file_path")
                 res = WGSEngine.inject_raw_save_to_slot(user_wgs_dir, container_name, raw_file_path)
+                self.send_json(res)
+
+            elif path == "/api/sync/run-now":
+                cfg = ConfigManager.load_config()
+                max_history = cfg.get("max_backup_history", 10)
+                res = WGSEngine.sync_all_games_backup(backup_root, max_history)
+                self.send_json({"success": True, "results": res})
+
+            elif path == "/api/sync/scheduler/install":
+                interval = req_data.get("interval_mins", 60)
+                res = ConfigManager.install_windows_scheduled_task(interval)
+                self.send_json(res)
+
+            elif path == "/api/sync/scheduler/uninstall":
+                res = ConfigManager.uninstall_windows_scheduled_task()
                 self.send_json(res)
 
             elif path == "/api/tools/inspect-save":
@@ -176,11 +248,15 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
 
             elif path == "/api/open-file-selector":
                 # Open Windows native file dialog via PowerShell
-                mode = req_data.get("mode", "folder") # 'folder' or 'file'
+                mode = req_data.get("mode", "folder") # 'folder', 'file', or 'save_file'
                 filter_type = req_data.get("filter", "All Files (*.*)|*.*")
+                default_name = req_data.get("default_name", "")
                 
                 if mode == "folder":
                     ps_cmd = '[System.Reflection.Assembly]::LoadWithPartialName("System.windows.forms") | Out-Null; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.ShowNewFolderButton = $true; if ($d.ShowDialog() -eq "OK") { Write-Output $d.SelectedPath }'
+                elif mode == "save_file":
+                    filter_str = filter_type.replace('"', '`"')
+                    ps_cmd = f'[System.Reflection.Assembly]::LoadWithPartialName("System.windows.forms") | Out-Null; $d = New-Object System.Windows.Forms.SaveFileDialog; $d.Filter = "{filter_str}"; $d.FileName = "{default_name}"; if ($d.ShowDialog() -eq "OK") {{ Write-Output $d.FileName }}'
                 else:
                     filter_str = filter_type.replace('"', '`"')
                     ps_cmd = '[System.Reflection.Assembly]::LoadWithPartialName("System.windows.forms") | Out-Null; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Filter = "' + filter_str + '"; if ($d.ShowDialog() -eq "OK") { Write-Output $d.FileName }'
@@ -233,7 +309,40 @@ class XboxSaveAPIHandler(BaseHTTPRequestHandler):
             except:
                 pass
 
+def _background_auto_sync_loop():
+    """Periodic auto-sync thread when server is active."""
+    while True:
+        try:
+            time.sleep(60) # check every minute
+            cfg = ConfigManager.load_config()
+            if cfg.get("auto_sync_enabled"):
+                interval_secs = max(5, int(cfg.get("auto_sync_interval_mins", 60))) * 60
+                last_time_str = cfg.get("last_sync_time")
+                should_sync = False
+                if not last_time_str:
+                    should_sync = True
+                else:
+                    try:
+                        import datetime
+                        last_dt = datetime.datetime.strptime(last_time_str, "%Y-%m-%d %H:%M:%S")
+                        diff = (datetime.datetime.now() - last_dt).total_seconds()
+                        if diff >= interval_secs:
+                            should_sync = True
+                    except:
+                        should_sync = True
+
+                if should_sync:
+                    bdir = ConfigManager.get_backup_dir()
+                    max_hist = cfg.get("max_backup_history", 10)
+                    WGSEngine.sync_all_games_backup(bdir, max_hist)
+        except Exception:
+            pass
+
 def start_server(port=8899):
+    # Start background auto-sync worker
+    sync_thread = threading.Thread(target=_background_auto_sync_loop, daemon=True)
+    sync_thread.start()
+
     HTTPServer.allow_reuse_address = True
     for p in range(port, port + 25):
         try:
@@ -243,3 +352,4 @@ def start_server(port=8899):
         except OSError:
             continue
     raise RuntimeError(f"No se pudo enlazar ningún puerto libre en el rango {port}-{port+25}")
+

@@ -101,6 +101,9 @@
       <button class="tab-btn tab-btn-bridge" data-tab="bridge">
         <span class="tab-icon">🔄</span> Cross-Save Sync Bridge
       </button>
+      <button class="tab-btn" data-tab="settings">
+        <span class="tab-icon">⚙️</span> Configuración & Auto-Sync
+      </button>
     </nav>
 
     <!-- Main Content Views -->
@@ -227,6 +230,129 @@
           <button id="btnExecuteBridgeTransfer" class="btn btn-primary" style="font-size: 1rem; padding: 12px 28px;">
             🚀 Transferir & Sincronizar Progreso Ahora
           </button>
+        </div>
+      </div>
+
+      <!-- Settings View -->
+      <div id="viewSettings" class="platform-view">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <h2>⚙️ Configuración del Sistema & Sincronización Automática (Cron)</h2>
+            <p class="section-desc">Personaliza las rutas de respaldo, retención de historial y programa copias de seguridad silenciosas en segundo plano con Windows Task Scheduler.</p>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <!-- Card 1: Rutas de Guardado -->
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <div class="settings-card-icon">📁</div>
+              <div>
+                <h3>Rutas de Almacenamiento & Respaldos</h3>
+                <p>Ubicación donde se guardarán las copias completas (.ZIP) y archivos extraídos (.SAV).</p>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 14px;">
+              <label>Directorio Principal de Respaldos (Backup Root):</label>
+              <div class="input-with-btn">
+                <input type="text" id="cfgBackupRootDir" class="form-control" placeholder="C:\Users\Usuario\XboxSaveBackups">
+                <button id="btnBrowseBackupDir" class="btn btn-secondary">Examinar...</button>
+                <button id="btnOpenCurrentBackupDir" class="btn btn-action-accent">Abrir</button>
+              </div>
+              <small class="form-help" style="display: block; margin-top: 6px; color: var(--text-muted); font-size: 0.8rem;">
+                Todas las copias de seguridad de tus partidas se guardarán directamente en esta carpeta, organizadas por juego.
+              </small>
+            </div>
+
+            <div class="form-group" style="margin-top: 16px;">
+              <label>Límite de Historial por Juego (Rotación de Backups):</label>
+              <select id="cfgMaxHistory" class="form-control">
+                <option value="5">Guardar las últimas 5 copias por juego</option>
+                <option value="10" selected>Guardar las últimas 10 copias por juego (Recomendado)</option>
+                <option value="20">Guardar las últimas 20 copias por juego</option>
+                <option value="50">Guardar las últimas 50 copias por juego</option>
+                <option value="0">Sin límite (Nunca borrar backups antiguos)</option>
+              </select>
+            </div>
+            
+            <div class="settings-card-footer" style="margin-top: 20px; display: flex; justify-content: flex-end;">
+              <button id="btnSaveStorageSettings" class="btn btn-primary">💾 Guardar Rutas y Preferencias</button>
+            </div>
+          </div>
+
+          <!-- Card 2: Sincronización Automática y Cron Silencioso -->
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <div class="settings-card-icon">🔄</div>
+              <div>
+                <h3>Sincronización Automática & Tarea Silenciosa (Cron)</h3>
+                <p>Programa copias periódicas sin interrumpir tus sesiones de juego ni abrir ventanas.</p>
+              </div>
+            </div>
+
+            <!-- Current status banner -->
+            <div class="sync-status-box" id="syncStatusBox" style="margin-top: 14px; background: rgba(16, 124, 16, 0.08); border: 1px solid rgba(16, 230, 76, 0.25); border-radius: 12px; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+              <div class="sync-status-indicator" style="display: flex; align-items: center; gap: 12px;">
+                <span class="status-dot-active" id="syncStatusDot" style="width: 12px; height: 12px; border-radius: 50%; background: #10e64c; box-shadow: 0 0 10px #10e64c; display: inline-block;"></span>
+                <div>
+                  <div class="sync-status-title" id="syncStatusTitle" style="font-weight: 600; font-size: 0.95rem; color: #f3f4f6;">Estado de Auto-Sync</div>
+                  <div class="sync-status-desc" id="syncStatusDesc" style="font-size: 0.8rem; color: var(--text-secondary);">Consultando estado...</div>
+                </div>
+              </div>
+              <button id="btnSyncNow" class="btn btn-action-xbox">⚡ Sincronizar Todo Ahora</button>
+            </div>
+
+            <div class="settings-toggle-group" style="margin-top: 18px; display: flex; justify-content: space-between; align-items: center; background: var(--bg-input); padding: 14px 18px; border-radius: 10px; border: 1px solid var(--border-color);">
+              <div class="toggle-info">
+                <div style="font-weight: 600; color: #f3f4f6;">Auto-Sync con la aplicación abierta</div>
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">Realiza respaldos continuos en segundo plano de todas las partidas activas.</div>
+              </div>
+              <label class="switch" style="position: relative; display: inline-block; width: 48px; height: 26px;">
+                <input type="checkbox" id="cfgAutoSyncEnabled" style="opacity: 0; width: 0; height: 0;">
+                <span class="slider round" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #374151; transition: .3s; border-radius: 34px;"></span>
+              </label>
+            </div>
+
+            <div class="form-group" style="margin-top: 14px;">
+              <label>Frecuencia de Sincronización:</label>
+              <select id="cfgSyncInterval" class="form-control">
+                <option value="15">Cada 15 minutos</option>
+                <option value="30">Cada 30 minutos</option>
+                <option value="60" selected>Cada 1 hora (Recomendado)</option>
+                <option value="360">Cada 6 horas</option>
+                <option value="720">Cada 12 horas</option>
+                <option value="1440">Una vez al día (Cada 24 horas)</option>
+              </select>
+            </div>
+
+            <hr class="settings-divider" style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
+
+            <!-- Windows Task Scheduler / Silent Cron Section -->
+            <div class="scheduler-box" style="background: rgba(0, 210, 255, 0.05); border: 1px solid rgba(0, 210, 255, 0.25); border-radius: 12px; padding: 16px;">
+              <div class="scheduler-header" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+                <div>
+                  <h4 style="color: #00d2ff; display: flex; align-items: center; gap: 8px; font-size: 1rem;">
+                    🛡️ Tarea Programada de Windows (Silent Cron)
+                  </h4>
+                  <p style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.4;">
+                    Configura una tarea en el Programador de Windows que se auto-ejecuta de forma <strong>100% silenciosa</strong> (invisible, sin ventanas ni consolas) para que tus partidas siempre estén a salvo incluso con la app cerrada.
+                  </p>
+                </div>
+                <div id="schedulerBadge" class="badge-task badge-task-off" style="padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; white-space: nowrap;">No Instalada</div>
+              </div>
+
+              <div class="scheduler-actions" style="margin-top: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <button id="btnInstallScheduler" class="btn btn-action-accent">
+                  ⚙️ Instalar Tarea Programada Silenciosa
+                </button>
+                <button id="btnUninstallScheduler" class="btn btn-secondary btn-sm" style="display: none;">
+                  ❌ Desinstalar Tarea
+                </button>
+                <span id="schedulerNextRun" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </main>

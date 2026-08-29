@@ -210,6 +210,215 @@ class WGSEngine:
         }
 
     @classmethod
+    def export_single_slot_raw(cls, user_wgs_dir, container_name, dest_path_or_dir):
+        """
+        Extracts a single WGS container slot as a clean .sav file.
+        dest_path_or_dir can be a specific file path (e.g. C:\save\slot1.sav) or a directory.
+        """
+        index_path = os.path.join(user_wgs_dir, "containers.index")
+        parsed = cls.parse_wgs_container_index(index_path)
+        if not parsed:
+            raise ValueError(f"No valid containers.index found in {user_wgs_dir}")
+
+        target_container = None
+        for c in parsed["containers"]:
+            if c["name"] == container_name or c["guid"] == container_name:
+                target_container = c
+                break
+
+        if not target_container:
+            raise ValueError(f"Slot / Container '{container_name}' no encontrado en el índice WGS.")
+
+        if not target_container.get("files") or len(target_container["files"]) == 0:
+            raise ValueError(f"El contenedor '{container_name}' no contiene blobs de datos.")
+
+        # Determine target file path
+        if os.path.isdir(dest_path_or_dir) or dest_path_or_dir.endswith("\\") or dest_path_or_dir.endswith("/"):
+            os.makedirs(dest_path_or_dir, exist_ok=True)
+            clean_name = f"{container_name}.sav" if not container_name.endswith(".sav") else container_name
+            clean_name = "".join(ch for ch in clean_name if ch.isalnum() or ch in "._- ")
+            out_file = os.path.join(dest_path_or_dir, clean_name)
+        else:
+            out_file = dest_path_or_dir
+            if not out_file.lower().endswith(".sav") and "." not in os.path.basename(out_file):
+                out_file += ".sav"
+            os.makedirs(os.path.dirname(os.path.abspath(out_file)), exist_ok=True)
+
+        src_blob = target_container["files"][0]["blob_path"]
+        if not os.path.exists(src_blob):
+            raise FileNotFoundError(f"Blob de partida {src_blob} no encontrado en disco.")
+
+        shutil.copy2(src_blob, out_file)
+        file_size = os.path.getsize(out_file)
+
+        return {
+            "success": True,
+            "container": container_name,
+            "exported_file": out_file,
+            "filename": os.path.basename(out_file),
+            "size": file_size,
+            "size_kb": round(file_size / 1024, 2),
+            "modified": target_container.get("modified")
+        }
+
+    @classmethod
+    def sync_all_games_backup(cls, backup_root=None, max_history=10):
+        """
+        Performs a full automated synchronization of all games (Xbox, Steam, Local)
+        that have active save files. Applies rotation limit max_history per game.
+        """
+        from .scanner import XboxScanner
+        from .config_manager import ConfigManager
+
+        if not backup_root:
+            backup_root = ConfigManager.get_backup_dir()
+
+        target_dir = os.path.abspath(backup_root)
+        os.makedirs(target_dir, exist_ok=True)
+
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        results = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "backed_up": [],
+            "errors": [],
+            "total_games": 0,
+            "total_saves": 0
+        }
+
+        # 1. Backup all Xbox Games with saves
+        try:
+            xbox_games = XboxScanner.find_all_games()
+            for g in xbox_games:
+                if g.get("has_saves") and g.get("wgs_user_dirs"):
+                    safe_name = "".join(c for c in g["name"] if c.isalnum() or c in "._- ").strip() or "XboxGame"
+                    game_sync_dir = os.path.join(target_dir, safe_name)
+                    os.makedirs(game_sync_dir, exist_ok=True)
+
+                    user_wgs_dir = g["wgs_user_dirs"][0]["path"]
+                    zip_name = f"{safe_name}_Backup_{ts}.zip"
+                    out_zip = os.path.join(game_sync_dir, zip_name)
+
+                    try:
+                        res = cls.create_full_xbox_backup(user_wgs_dir, out_zip, g)
+                        results["backed_up"].append({
+                            "platform": "Xbox",
+                            "game": g["name"],
+                            "path": out_zip,
+                            "size": res["size"]
+                        })
+                        results["total_saves"] += 1
+                        cls._rotate_backups(game_sync_dir, max_history)
+                    except Exception as ex:
+                        results["errors"].append(f"Error respaldando {g['name']}: {ex}")
+        except Exception as ex:
+            results["errors"].append(f"Error escaneando Xbox: {ex}")
+
+        # 2. Backup Steam games with saves
+        try:
+            steam_games = XboxScanner.scan_steam_data()
+            for sg in steam_games:
+                if sg.get("has_saves"):
+                    safe_name = "".join(c for c in sg["name"] if c.isalnum() or c in "._- ").strip() or f"Steam_{sg.get('appid')}"
+                    game_sync_dir = os.path.join(target_dir, safe_name)
+                    os.makedirs(game_sync_dir, exist_ok=True)
+                    
+                    zip_name = f"{safe_name}_Backup_{ts}.zip"
+                    out_zip = os.path.join(game_sync_dir, zip_name)
+                    
+                    try:
+                        files_to_zip = []
+                        if sg.get("save_details") and sg["save_details"].get("files"):
+                            files_to_zip = sg["save_details"]["files"]
+                        elif sg.get("extra_save_files"):
+                            files_to_zip = sg["extra_save_files"]
+
+                        if files_to_zip:
+                            with zipfile.ZipFile(out_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
+                                added_names = set()
+                                for f_info in files_to_zip:
+                                    f_p = f_info.get("path")
+                                    if f_p and os.path.isfile(f_p):
+                                        arc_name = f_info.get("name", os.path.basename(f_p))
+                                        if arc_name in added_names:
+                                            # Disambiguate if parent folder differs
+                                            parent_dir = os.path.basename(os.path.dirname(f_p))
+                                            arc_name = f"{parent_dir}_{arc_name}"
+                                        added_names.add(arc_name)
+                                        zf.write(f_p, arc_name)
+                            
+                            results["backed_up"].append({
+                                "platform": "Steam",
+                                "game": sg["name"],
+                                "path": out_zip,
+                                "size": os.path.getsize(out_zip)
+                            })
+                            results["total_saves"] += 1
+                            cls._rotate_backups(game_sync_dir, max_history)
+                    except Exception as ex:
+                        results["errors"].append(f"Error respaldando Steam {sg['name']}: {ex}")
+        except Exception as ex:
+            results["errors"].append(f"Error escaneando Steam: {ex}")
+
+        # 3. Backup PC Local saves & Epic
+        try:
+            epic_games, local_saves = XboxScanner.scan_epic_and_local_data()
+            for lg in local_saves:
+                if lg.get("save_path") and os.path.exists(lg["save_path"]) and lg.get("files"):
+                    safe_name = "".join(c for c in lg["name"] if c.isalnum() or c in "._- ").strip() or "PCGame"
+                    game_sync_dir = os.path.join(target_dir, safe_name)
+                    os.makedirs(game_sync_dir, exist_ok=True)
+
+                    zip_name = f"{safe_name}_Backup_{ts}.zip"
+                    out_zip = os.path.join(game_sync_dir, zip_name)
+
+                    try:
+                        with zipfile.ZipFile(out_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
+                            added_names = set()
+                            for f_info in lg["files"]:
+                                f_p = f_info.get("path")
+                                if f_p and os.path.isfile(f_p):
+                                    arc_name = f_info.get("name", os.path.basename(f_p))
+                                    if arc_name in added_names:
+                                        parent_dir = os.path.basename(os.path.dirname(f_p))
+                                        arc_name = f"{parent_dir}_{arc_name}"
+                                    added_names.add(arc_name)
+                                    zf.write(f_p, arc_name)
+
+                        results["backed_up"].append({
+                            "platform": "PC Local",
+                            "game": lg["name"],
+                            "path": out_zip,
+                            "size": os.path.getsize(out_zip)
+                        })
+                        results["total_saves"] += 1
+                        cls._rotate_backups(game_sync_dir, max_history)
+                    except Exception as ex:
+                        results["errors"].append(f"Error respaldando Local {lg['name']}: {ex}")
+        except Exception as ex:
+            results["errors"].append(f"Error escaneando Locales: {ex}")
+
+        results["total_games"] = len(results["backed_up"])
+        
+        # Update config with sync results
+        ConfigManager.update_key("last_sync_time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        ConfigManager.update_key("last_sync_status", f"Éxito ({results['total_games']} juegos respaldados)")
+        ConfigManager.update_key("last_sync_files_count", results["total_saves"])
+
+        return results
+
+    @classmethod
+    def _rotate_backups(cls, folder_path, max_history):
+        if not max_history or max_history <= 0:
+            return
+        zips = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith(".zip")]
+        zips.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        for old_zip in zips[max_history:]:
+            try:
+                os.remove(old_zip)
+            except Exception:
+                pass
+
+    @classmethod
     def create_full_xbox_backup(cls, user_wgs_dir, backup_zip_path, game_meta=None):
         """
         Creates a complete restorable ZIP backup of the Xbox WGS save directory and metadata.
